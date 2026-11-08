@@ -137,7 +137,8 @@ class WriteTests(ApplyTestCase):
         self.assertIn("/api/schedule", writes)
         self.assertLess(writes.index("/api/shows"), writes.index("/api/schedule"))
 
-        grid = [entry for entry in self.log() if entry["path"] == "/api/schedule"][0]["body"]
+        grid = [entry for entry in self.log()
+                if entry["path"] == "/api/schedule" and entry["method"] == "PUT"][0]["body"]
         cells = [cell for day in grid["schedule"].values() for cell in day]
         self.assertEqual(len(cells), 168)
         known = {show["id"] for show in self.server.station.schedule["shows"]}
@@ -404,7 +405,8 @@ class OverrideTests(ApplyTestCase):
         self.assertEqual(code, 0, output)
 
         lock = json.loads((runsheet.INSTANCE_DIR / "ids.lock.json").read_text())
-        sent = [entry for entry in self.log() if entry["path"] == "/api/schedule"][0]["body"]
+        sent = [entry for entry in self.log()
+                if entry["path"] == "/api/schedule" and entry["method"] == "PUT"][0]["body"]
         self.assertEqual(sent["override"], lock["shows"][slug])
         self.assertEqual(self.server.station.schedule["override"], lock["shows"][slug])
 

@@ -81,6 +81,18 @@ class AuditTestCase(ApplyTestCase):
 
 
 class SuccessfulApplyTests(AuditTestCase):
+    def persona_files(self):
+        return sorted((runsheet.INSTANCE_DIR / "character" / "personas").glob("*.json"))
+
+    def edit_persona(self, field, value):
+        """Change one field on one persona; return (edited name, other names)."""
+        documents = [json.loads(path.read_text()) for path in self.persona_files()]
+        target = documents[0]
+        target[field] = value
+        path = self.persona_files()[0]
+        path.write_text(json.dumps(target, indent=2))
+        return target["name"], [document["name"] for document in documents[1:]]
+
     def test_a_verified_apply_writes_one_entry_and_one_index_row(self):
         before_rows = len(self.rows())
         code, output = self.run_apply(yes=True)
@@ -105,9 +117,10 @@ class SuccessfulApplyTests(AuditTestCase):
                          "the entry must carry every documented field")
         self.assertRegex(fields["Date"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
         self.assertTrue(fields["Commit"] == "—" or len(fields["Commit"]) >= 7)
-        for word in ("shows", "grid", "settings"):
+        for word in ("personas", "shows", "grid", "settings", "character"):
             self.assertIn(word, fields["What changed"])
-        self.assertIn("168 cells", fields["What changed"])
+        self.assertIn("not comparable at tier 1", fields["What changed"],
+                      "tier 1 must say which sections it cannot compare")
         self.assertIn("--no-backup", fields["Backup ref"])
         self.assertIn("read-back passed", fields["Verified by"])
         self.assertIn("NOT verified", fields["Verified by"],
@@ -116,6 +129,29 @@ class SuccessfulApplyTests(AuditTestCase):
 
         self.assertIn("audit     ", output)
         self.assertIn("+ index row", output)
+
+    def test_the_entry_names_the_persona_that_changed_and_not_the_others(self):
+        name, others = self.edit_persona("tagline", "A changed tagline for the audit test")
+        code, output = self.run_apply(yes=True)
+        self.assertEqual(code, 0, output)
+
+        changed = entry_fields(self.read_entry(self.new_entries()[0]))["What changed"]
+        self.assertIn("personas: changed %s" % name, changed)
+        self.assertEqual(changed.count("personas"), 1,
+                         "the entry must name only the changed persona")
+        for other in others:
+            self.assertNotIn(other, changed,
+                             "an unchanged persona must not appear in the change set")
+
+    def test_an_apply_with_no_drift_says_the_payload_already_matched(self):
+        # A first apply still sends everything, but the station already holds
+        # it: the entry must not pretend a change happened.
+        code, output = self.run_apply(yes=True)
+        self.assertEqual(code, 0, output)
+        changed = entry_fields(self.read_entry(self.new_entries()[0]))["What changed"]
+        self.assertIn("no difference against the station", changed)
+        self.assertIn("grid unchanged", changed)
+        self.assertIn("personas unchanged", changed)
 
     def test_a_dry_run_writes_nothing(self):
         code, _ = self.run_apply()
