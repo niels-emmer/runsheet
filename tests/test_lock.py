@@ -99,6 +99,29 @@ class ContentionTests(LockTestCase):
         self.assertIn("locked by another runsheet command", output)
         self.assertFalse((self.root / "character" / "personas" / "dj-blocked.json").exists())
 
+    def test_pull_force_fails_fast_while_a_lock_is_held(self):
+        self.seed_character()
+        self.hold_lock(os.getpid(), command="apply")
+
+        code, output = self.run_cli("pull", "--force")
+
+        self.assertEqual(code, 1, output)
+        self.assertIn("locked by another runsheet command", output)
+        self.assertTrue((self.root / "ids.lock.json").is_file(),
+                        "the holder's instance/ must be untouched")
+
+    def test_character_init_force_fails_fast_while_a_lock_is_held(self):
+        self.seed_character()
+        before = sorted(path.name for path in (self.root / "character" / "personas").glob("*.json"))
+        self.hold_lock(os.getpid(), command="apply")
+
+        code, output = self.run_cli("character", "init", "--force", "--from", "demo")
+
+        self.assertEqual(code, 1, output)
+        self.assertIn("locked by another runsheet command", output)
+        after = sorted(path.name for path in (self.root / "character" / "personas").glob("*.json"))
+        self.assertEqual(after, before, "a refused replace must not delete the holder's files")
+
 
 class ReleaseTests(LockTestCase):
     def test_the_lock_is_released_after_success(self):
@@ -129,6 +152,31 @@ class ReleaseTests(LockTestCase):
             self.assertEqual(holder["host"], socket.gethostname())
 
         self.assertFalse(self.lock_path.exists())
+
+    def test_replacing_instance_contents_keeps_the_write_lock(self):
+        # `pull --force` and `character init --force` empty instance/ rather
+        # than removing it, so the lock survives the swap it protects.
+        self.root.mkdir(parents=True)
+        (self.root / "ids.lock.json").write_text("{}", encoding="utf-8")
+        (self.root / "character").mkdir()
+        (self.root / "character" / "character.json").write_text("{}", encoding="utf-8")
+
+        with runsheet.InstanceWriteLock(self.root, "pull"):
+            runsheet.replace_instance_dir(self.root)
+
+            self.assertTrue(self.lock_path.is_file(), "the lock must survive the replace")
+            self.assertFalse((self.root / "ids.lock.json").exists())
+            self.assertFalse((self.root / "character").exists())
+
+        self.assertFalse(self.lock_path.exists())
+
+    def test_character_init_force_releases_after_replacing(self):
+        self.seed_character()
+
+        code, output = self.run_cli("character", "init", "--force", "--from", "demo")
+
+        self.assertEqual(code, 0, output)
+        self.assertFalse(self.lock_path.exists(), "the swap must release the lock")
 
 
 class StaleLockTests(LockTestCase):

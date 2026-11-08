@@ -32,13 +32,14 @@ All notable changes to this project are documented here. The format is based on
   it, and a set-but-missing path fails as a configuration error instead of silently falling back.
   Documented in `.env.example` and the README's "Getting started"; pinned by
   [`tests/test_env_file.py`](tests/test_env_file.py).
-- **Concurrent writers in one checkout are serialised by an advisory lock.** `apply`, `restore`, and
-  the `character`/`blocklist` authoring commands take `instance/.runsheet.lock` for their duration, so
+- **Concurrent writers in one checkout are serialised by an advisory lock.** `pull`, `apply`, `restore`,
+  and the `character`/`blocklist` authoring commands take `instance/.runsheet.lock` for their duration, so
   two agent sessions (or an orchestrator's two workers) cannot interleave an apply with a second write
-  or race on `ids.lock.json`. The lock names its pid, command, start time and host; a contender fails
-  fast with that holder instead of hanging or corrupting the lock. A lock left by a crashed process is
-  recovered once its pid is gone, while a foreign-host or unreadable lock is never stolen. Read-only
-  commands (`status`, `diff`, `validate`) take no lock.
+  or race on `ids.lock.json`. `pull --force` and `character init --force` empty `instance/` instead of
+  deleting it, so the lock survives the replacement it guards. The lock names its pid, command, start
+  time and host; a contender fails fast with that holder instead of hanging or corrupting the lock. A
+  lock left by a crashed process is recovered once its pid is gone, while a foreign-host or unreadable
+  lock is never stolen. Read-only commands (`status`, `diff`, `validate`, `capabilities`) take no lock.
 - **Tier 2 is reachable from a bare ssh host.** `status` at tier 1 now probes the host it is given: one
   read-only ssh round trip lists the running containers, inspects their mounts, and reports the first
   mount that already contains a `settings.json`, printing the exact `SUBWAVE_CONTAINER=` and
