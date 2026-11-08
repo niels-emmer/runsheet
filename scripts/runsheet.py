@@ -1032,9 +1032,12 @@ def print_diff(report):
 # commands
 # --------------------------------------------------------------------------
 
-def _emit_json(command, ok, payload):
+def _emit_json(command, ok, payload, error=None):
     """One JSON document on stdout, for a caller that must not parse prose."""
-    print(json.dumps({"command": command, "ok": bool(ok), "payload": payload}, indent=2))
+    document = {"command": command, "ok": bool(ok), "payload": payload}
+    if error is not None:
+        document["error"] = error
+    print(json.dumps(document, indent=2))
 
 
 def cmd_status(config, args):
@@ -5524,6 +5527,8 @@ def main(argv=None):
             mock = MockStation()
         except (ConfigError, ToolError) as exc:
             print("runsheet: %s" % exc, file=sys.stderr)
+            if getattr(args, "json", False):
+                _emit_json(getattr(args, "command", None), False, None, error=str(exc))
             return EXIT_CONFIG
         print("mock      %s (in-process tests/mock_station.py; no network, no host)"
               % mock.server.url, flush=True)
@@ -5532,9 +5537,24 @@ def main(argv=None):
         return args.func(config, args)
     except ConfigError as exc:
         print("runsheet: %s" % exc, file=sys.stderr)
+        if getattr(args, "json", False):
+            # A caller that asked for JSON must get a document even when the
+            # command never reached its payload: exit 1 alone cannot say
+            # whether stdout holds a report or a failure.
+            _emit_json(getattr(args, "command", None), False, None, error=str(exc))
+        return EXIT_CONFIG
+    except ConfigError as exc:
+        print("runsheet: %s" % exc, file=sys.stderr)
+        if getattr(args, "json", False):
+            # A caller that asked for JSON must get a document even when the
+            # command never reached its payload: exit 1 alone cannot say
+            # whether stdout holds a report or a failure.
+            _emit_json(getattr(args, "command", None), False, None, error=str(exc))
         return EXIT_CONFIG
     except ToolError as exc:
         print("runsheet: %s" % exc, file=sys.stderr)
+        if getattr(args, "json", False):
+            _emit_json(getattr(args, "command", None), False, None, error=str(exc))
         return EXIT_ERROR
     finally:
         if mock is not None:

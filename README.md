@@ -268,7 +268,9 @@ formatted report — the same information, for a caller that must not parse pros
 reports tier, endpoint, station, on-air state, config counts and repo-vs-live sync; `diff` reports the
 change count plus personas, shows, changed grid days, settings keys, character, override, blocklist and
 skills; `validate` reports the directory, errors, warnings, unreadable input, a combined `issues` list and
-counts. Exit codes do not change, so `diff` still exits 1 on drift and `validate` 1 on errors.
+counts. Exit codes do not change, so `diff` still exits 1 on drift and `validate` 1 on errors. A failed
+command still prints a document — `ok: false`, `payload: null`, and an `error` message — alongside the
+stderr line, so stdout is always parseable when `--json` was asked for.
 
 Two directories are called `skills/`, and they are different things:
 
