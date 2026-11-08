@@ -85,6 +85,24 @@ backup before a change, no read-back afterwards, no `--yes`. Each call happens i
 undone. And it cannot read or write the station's configuration at all — no persona, show, schedule or
 settings tool exists there. That is what the checkout, and `apply`, are for.
 
+### The toolkit's own MCP server: read-only, three tools
+
+That was the *station's* server. This repository also has a second, much smaller one of its own, for an
+agent that would rather call a tool than run `runsheet.py` and parse text:
+
+```sh
+python3 scripts/runsheet.py mcp-server     # MCP over stdio
+```
+
+It exposes exactly three tools, each a thin wrapper around the command of the same name:
+`runsheet_status`, `runsheet_diff` and `runsheet_validate`. Every tool is annotated `readOnlyHint: true`,
+and each result carries the command's own output verbatim plus its exit code.
+
+There is deliberately no fourth tool. `apply`, `character`, `blocklist`, `skills`, `backup`, `restore`
+and `onair` stay CLI-only: a configuration change needs a diff, a dry run and an explicit confirmation,
+and a tool call has none of the three. Putting a writer behind `tools/call` would delete the review step
+that makes this toolkit safe — the same reasoning as the station's own control-only boundary.
+
 ## What it cannot do yet
 
 - **Avatars and station imaging.** Jingles, sound effects and beds are backed up but not authored here. Use
@@ -215,6 +233,7 @@ Two ways to reach a station. The second is worth having.
 | `pull` | copy the station into `instance/` | `pull --force` |
 | `diff` | what differs between your files and the station | `diff` |
 | `validate` | check your files before applying | `validate --dir examples/demo` |
+| `mcp-server` | the same three reads as MCP tools, for an MCP client | `mcp-server` |
 | `apply` | send your files to the station; dry run unless `--yes` | `apply --yes` |
 | `backup` | config, assets and schedule, outside the repo | `backup --with-library` |
 | `restore` | put a backup back | `restore <dir> --yes` |

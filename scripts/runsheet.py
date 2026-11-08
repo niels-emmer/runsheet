@@ -17,8 +17,10 @@ read instead of ./.env, so many checkouts can share one file.
 
 import argparse
 import base64
+import contextlib
 import copy
 import hashlib
+import io
 import json
 import os
 import re
@@ -4870,6 +4872,236 @@ def _nested_parsers(parser):
                 yield from _nested_parsers(child)
 
 
+# --------------------------------------------------------------------------
+# The toolkit's own MCP server: read-only, three tools
+#
+# THE OTHER BOUNDARY. The station's /api/mcp (above) is control-only: reads and
+# on-air actions, no config writers. This is a different server, for THIS TOOL,
+# and it carries the same reasoning one step further: it exposes only what reads.
+#
+# Why writers can never live here, same as D3 for the station: a config change
+# needs a diff, a dry run and an explicit human confirmation. A tool call has
+# none of those - the client sees a name, an input schema and a result, and a
+# model may chain the call on its own. `apply` exists precisely so a person
+# reviews a diff and types --yes; putting that behind tools/call would delete
+# the review step and the tier-2-only guards with it. So status, diff and
+# validate are here, and apply, character, blocklist, skills, backup, restore
+# and onair stay CLI-only. Do not add a fourth tool that writes.
+#
+# These are thin wrappers: they call the same cmd_* functions the CLI calls and
+# return their stdout verbatim, so the two surfaces cannot drift apart.
+# --------------------------------------------------------------------------
+
+MCP_SERVER_NAME = "runsheet-toolkit"
+MCP_PROTOCOL_VERSION = "2025-06-18"
+MCP_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+
+# MCP tool annotations. readOnlyHint is the machine-readable form of the
+# boundary above; destructiveHint false says a client may run these freely.
+MCP_READ_ONLY_ANNOTATIONS = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True,
+}
+
+MCP_TOOL_DEFINITIONS = (
+    {
+        "name": "runsheet_status",
+        "title": "runsheet status",
+        "description": (
+            "The toolkit's `status`: which capability tier this checkout can reach, the "
+            "station's identity, what is on air, and whether instance/ has drifted. "
+            "Read-only: it reads the station over HTTP (and ssh at tier 2) but writes nothing."
+        ),
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "annotations": MCP_READ_ONLY_ANNOTATIONS,
+    },
+    {
+        "name": "runsheet_diff",
+        "title": "runsheet diff",
+        "description": (
+            "The toolkit's `diff`: drift between instance/ and the live station, as a "
+            "read-only report. structuredContent.exitCode is 1 when the station has "
+            "drifted - that is a result, not a failure. Writes nothing."
+        ),
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "annotations": MCP_READ_ONLY_ANNOTATIONS,
+    },
+    {
+        "name": "runsheet_validate",
+        "title": "runsheet validate",
+        "description": (
+            "The toolkit's `validate`: check instance/ (or `dir`) against the station's "
+            "schema without applying anything. Read-only: it never writes and never applies."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "dir": {
+                    "type": "string",
+                    "description": ("validate this station directory instead of instance/ "
+                                    "(e.g. examples/demo)"),
+                },
+            },
+            "additionalProperties": False,
+        },
+        "annotations": MCP_READ_ONLY_ANNOTATIONS,
+    },
+)
+
+MCP_READ_ONLY_TOOLS = tuple(tool["name"] for tool in MCP_TOOL_DEFINITIONS)
+
+
+def _mcp_capture(func, config, args):
+    """Run a cmd_* function and return (exit code, its stdout as text)."""
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        code = func(config, args)
+    return code, buffer.getvalue()
+
+
+def mcp_call_tool(name, arguments):
+    """Run one of the three read-only tools. Returns (exit code, output text).
+
+    This function is the whole tool surface. It deliberately calls the existing
+    command implementations rather than reimplementing them, and it has no
+    branch that can write: the only functions it can reach are cmd_status,
+    cmd_diff and cmd_validate.
+    """
+    arguments = arguments or {}
+    config = Config()
+    if name == "runsheet_status":
+        return _mcp_capture(cmd_status, config, argparse.Namespace())
+    if name == "runsheet_diff":
+        return _mcp_capture(cmd_diff, config, argparse.Namespace())
+    if name == "runsheet_validate":
+        root = arguments.get("dir")
+        if root is not None and not isinstance(root, str):
+            raise ValueError("dir must be a string")
+        return _mcp_capture(cmd_validate, config, argparse.Namespace(dir=root))
+    raise KeyError(name)
+
+
+def _mcp_result(identifier, result):
+    return {"jsonrpc": "2.0", "id": identifier, "result": result}
+
+
+def _mcp_error(identifier, code, message):
+    return {"jsonrpc": "2.0", "id": identifier,
+            "error": {"code": code, "message": message}}
+
+
+def _mcp_tool_result(code, text, is_error=False):
+    """A CallToolResult. exitCode rides in structuredContent, not in the text.
+
+    The text is the command's own stdout, unchanged, so a client can compare it
+    with the CLI. A non-zero exit is not automatically an error: `diff` exits 1
+    for drift and `validate` exits 1 for a failed check - both are answers.
+    Only an unreadable input or a refused configuration (EXIT_CONFIG) is an
+    error, because then there is no report to trust.
+    """
+    return {
+        "content": [{"type": "text", "text": text}],
+        "structuredContent": {"exitCode": code},
+        "isError": bool(is_error),
+    }
+
+
+def mcp_handle(message):
+    """Answer one JSON-RPC message. Returns a response dict, or None for a notification."""
+    if not isinstance(message, dict):
+        return _mcp_error(None, -32600, "invalid request: expected one JSON object")
+    method = message.get("method")
+    identifier = message.get("id")
+    if not isinstance(method, str):
+        return _mcp_error(identifier, -32600, "invalid request: no method")
+    params = message.get("params")
+    if not isinstance(params, dict):
+        params = {}
+
+    if method == "initialize":
+        requested = params.get("protocolVersion")
+        version = (requested if requested in MCP_PROTOCOL_VERSIONS
+                   else MCP_PROTOCOL_VERSION)
+        return _mcp_result(identifier, {
+            "protocolVersion": version,
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": MCP_SERVER_NAME, "version": "1.0.0"},
+            "instructions": (
+                "Read-only runsheet tools: status, diff and validate. This server has no "
+                "write tool by design - config changes go through the CLI, where a diff, "
+                "a dry run and an explicit --yes stand between you and the station."
+            ),
+        })
+    if method == "ping":
+        return _mcp_result(identifier, {})
+    if method == "tools/list":
+        return _mcp_result(identifier, {"tools": list(MCP_TOOL_DEFINITIONS)})
+    if method == "tools/call":
+        name = params.get("name")
+        arguments = params.get("arguments")
+        if arguments is None:
+            arguments = {}
+        if not isinstance(arguments, dict):
+            return _mcp_error(identifier, -32602, "arguments must be a JSON object")
+        if name not in MCP_READ_ONLY_TOOLS:
+            return _mcp_error(
+                identifier, -32602,
+                "unknown tool %r; this server exposes only: %s"
+                % (name, ", ".join(MCP_READ_ONLY_TOOLS)))
+        try:
+            code, text = mcp_call_tool(name, arguments)
+        except ValueError as exc:
+            return _mcp_error(identifier, -32602, str(exc))
+        except (ConfigError, ToolError) as exc:
+            return _mcp_result(
+                identifier,
+                _mcp_tool_result(EXIT_CONFIG, "runsheet: %s" % exc, is_error=True))
+        return _mcp_result(identifier,
+                           _mcp_tool_result(code, text, is_error=(code == EXIT_CONFIG)))
+    if method.startswith("notifications/"):
+        # notifications/initialized and friends: never answered.
+        return None
+    if identifier is None:
+        return None
+    return _mcp_error(identifier, -32601, "unknown method %r" % method)
+
+
+def serve_mcp(stdin=None, stdout=None):
+    """JSON-RPC over newline-delimited stdio (the MCP stdio transport).
+
+    stdout is the protocol channel and nothing else: the wrapped commands print
+    into a buffer, so no banner, log line or progress message can corrupt the
+    stream. Diagnostics would go to stderr.
+    """
+    stdin = stdin or sys.stdin
+    stdout = stdout or sys.stdout
+    for line in stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            message = json.loads(line)
+        except ValueError as exc:
+            response = _mcp_error(None, -32700, "parse error: %s" % exc)
+        else:
+            try:
+                response = mcp_handle(message)
+            except Exception as exc:  # one bad call must not end the server
+                identifier = message.get("id") if isinstance(message, dict) else None
+                response = _mcp_error(identifier, -32603, "internal error: %s" % exc)
+        if response is not None:
+            stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
+            stdout.flush()
+    return EXIT_OK
+
+
+def cmd_mcp_server(config, args):
+    """`mcp-server`: serve the three read-only tools to an MCP client on stdio."""
+    return serve_mcp()
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="runsheet.py",
@@ -4910,6 +5142,11 @@ def build_parser():
 
     diff = sub.add_parser("diff", help="read-only drift report")
     diff.set_defaults(func=cmd_diff)
+
+    mcp_server = sub.add_parser(
+        "mcp-server",
+        help="serve status, diff and validate to an MCP client over stdio (read-only)")
+    mcp_server.set_defaults(func=cmd_mcp_server)
 
     onair = sub.add_parser("onair", help="ephemeral on-air control via the station's MCP server")
     onair_sub = onair.add_subparsers(dest="onair_command", required=True)
