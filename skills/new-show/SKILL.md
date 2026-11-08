@@ -152,7 +152,7 @@ PY
 ```
 
 Finally, listen forward: at the first owned hour, `status` should report the new show on air and the
-links should match the brief. A create also earns a row in `docs/applied.md` if the apply step writes
+links should match the brief. A create also earns an entry in `docs/applied/` if the apply step writes
 one.
 
 ## Failure modes

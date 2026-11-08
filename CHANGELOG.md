@@ -22,7 +22,7 @@ All notable changes to this project are documented here. The format is based on
   mount that already contains a `settings.json`, printing the exact `SUBWAVE_CONTAINER=` and
   `SUBWAVE_STATE_DIR=` lines to add. A wrong container name on the right host is recovered the same way.
   Without `SUBWAVE_HOST` it says what to set and probes nothing. See
-  [`docs/decision-log.md`](docs/decision-log.md) D13.
+  [D13](docs/decisions/D13-tier-2-is-discovered-from-a-bare-ssh-host-not-interrogated-out-of-the-operator.md).
 - [`tests/test_onboarding.py`](tests/test_onboarding.py) pins the discovery contract — parsing, ordering
   (the image default leads), remote-shell noise, an unreachable host, and every `status` message — with
   `ssh_run` stubbed, so it needs no ssh.
@@ -35,6 +35,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **The decision log and the applied log are now one entry per file.** [`docs/decision-log.md`](docs/decision-log.md)
+  and [`docs/applied.md`](docs/applied.md) are indexes; each decision lives at
+  `docs/decisions/D<n>-<slug>.md` and each applied row at `docs/applied/<date>-<slug>.md`. Both logs were
+  append-only files that every contributor edited at the end, so two branches that each added an entry
+  conflicted on every rebase for no reason — and this repo is developed by parallel agent sessions in
+  separate worktrees, which makes that constant. Every existing entry moved across verbatim, and links
+  that named a specific decision now point at its file. `apply` writing its own audit entry is separate
+  work; the directory is the shape it will write into.
 - **Renamed from `subwave-marvin` to `runsheet`.** The script is now `scripts/runsheet.py` and the repo
   `niels-emmer/runsheet`. The old name implied this tool was part of the SUB/WAVE project; it is not.
   `SUB/WAVE` and the `SUBWAVE_*` variables still name the station, not the tool, and are unchanged.

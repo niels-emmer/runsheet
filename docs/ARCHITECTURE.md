@@ -89,7 +89,7 @@ Two rules the tool must honour everywhere:
 1. **Announce the tier.** Every command says which tier it is at and what that costs. Never degrade
    silently. At tier 1, `status` also probes the host it is given and prints the two `.env` lines that
    reach tier 2, because those two facts are discoverable and should not be interrogated out of the
-   operator (D13).
+   operator ([D13](decisions/D13-tier-2-is-discovered-from-a-bare-ssh-host-not-interrogated-out-of-the-operator.md)).
 2. **Never read-modify-write at tier 1.** Whole objects from the repo, or nothing.
 
 ## The data model
@@ -231,7 +231,9 @@ tests/                    offline suite; mock_station.py serves a real-shaped co
 docs/ARCHITECTURE.md      this file
 docs/PLAN.md              what is left to do
 docs/decision-log.md      why each choice was made, and what was rejected
-docs/applied.md           on-air audit trail: one row per apply
+docs/decisions/D<n>-*.md  one file per decision, linked from decision-log.md
+docs/applied.md           on-air audit trail: one entry per apply
+docs/applied/<date>-*.md  one file per applied entry, linked from applied.md
 docs/public-readiness.md  the public launch record and re-checks
 instance/                 GITIGNORED — a deployment's real data
   settings.json           config, secrets redacted
@@ -257,7 +259,7 @@ controller exists, and a test that needs a real station belongs behind a flag, n
 | Quickstart | `tests/test_smoke.py` copies only tracked files to a temp dir, starts the mock, and drives `status` → `pull --allow-lossy` → `validate` → `diff` → `apply` as subprocesses with no ssh and no HOME. If it fails, the README is lying |
 | Tier honesty | a tier-1 run refuses `backup` and names the missing schedule; no command silently trims |
 | Demo | CI validates `examples/demo/`, so a regression in the schema reference or the scaffold fixture fails there |
-| Audit | every apply has a row in `docs/applied.md` and a backup outside the repo |
+| Audit | every apply has an entry in `docs/applied/` and a backup outside the repo |
 
 The suite is the guard against regressions; a live station is the guard against the suite being wrong.
 The first real `apply` found three defects the mock could not have found (a backup arity crash, the
