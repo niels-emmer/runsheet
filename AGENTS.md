@@ -203,7 +203,9 @@ command-specific — `status` (`tier`, `tierLabel`, `tierDetail`, `endpoint`, `a
 `changes` with `personas`/`shows` added-removed-changed, `grid.changedDays`, `settings.changed`,
 `character`, `override`, `blocklist`, `skills`), and `validate` (`dir`, `errors`, `warnings`,
 `unreadable`, `issues`, `counts`). Exit codes are unchanged: `diff` still exits 1 on drift and
-`validate` 1 on errors.
+`validate` 1 on errors. When a command fails, stdout still carries a document — `ok: false`,
+`payload: null` and an `error` message — while stderr keeps the human line, so a caller can parse stdout
+without guessing whether it holds a report or a failure.
 
 ## Which procedure to load
 
