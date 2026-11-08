@@ -217,13 +217,20 @@ python3 scripts/runsheet.py apply     # DRY RUN by default; --yes performs the w
 `status`, `diff` and `validate` also take `--json`: one JSON document on stdout instead of the formatted
 report, additive to the default text. The envelope is `{"command", "ok", "payload"}`; `payload` is
 command-specific — `status` (`tier`, `tierLabel`, `tierDetail`, `endpoint`, `apiError`, `station`,
-`onAir`, `config`, `reads`, `backup`, `sync`), `diff` (`tier`, `direction`, `trimmed`, `count`, `notes`,
-`changes` with `personas`/`shows` added-removed-changed, `grid.changedDays`, `settings.changed`,
-`character`, `override`, `blocklist`, `skills`), and `validate` (`dir`, `errors`, `warnings`,
-`unreadable`, `issues`, `counts`). Exit codes are unchanged: `diff` still exits 1 on drift and
-`validate` 1 on errors. When a command fails, stdout still carries a document — `ok: false`,
-`payload: null` and an `error` message — while stderr keeps the human line, so a caller can parse stdout
-without guessing whether it holds a report or a failure.
+`onAir`, `config`, `reads`, `backup`, `sync`, and `tier2`: at tier 1 a state of `not-configured`,
+`probe-failed`, `none-found` or `found`, with `candidates` of `{container, stateDir}`; `null` at
+tier 2), `diff` (`tier`, `direction`, `trimmed`, `count`, `notes`, `changes` with
+`personas`/`shows` added-removed-changed, `grid.changedDays`, `settings.changed`, `character`,
+`override`, `blocklist`, `skills`), and `validate` (`dir`, `errors`, `warnings`, `unreadable`, `issues`,
+`counts`).
+
+`ok` mirrors a zero exit code and is command-specific: `status` means the station API answered, `diff`
+means no drift was found, and `validate` means no errors and nothing unreadable. A tier-1 `diff` can be
+`ok: true` on the readable fields only, so a caller must check `payload.trimmed` before treating that as
+a full match. Exit codes are unchanged: `diff` still exits 1 on drift and `validate` 1 on errors. When a
+command fails, stdout still carries a document — `ok: false`, `payload: null` and an `error` message —
+while stderr keeps the human line, so a caller can parse stdout without guessing whether it holds a
+report or a failure.
 
 ## Which procedure to load
 
