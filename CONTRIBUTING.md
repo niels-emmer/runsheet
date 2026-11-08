@@ -41,6 +41,10 @@ python3 scripts/runsheet.py validate --dir examples/demo
 `sh scripts/check-secrets.sh --all` also scans untracked-but-not-ignored files; run it if you
 have been generating captures locally.
 
+CI runs one more job the list above cannot cover: it builds the container image and runs `validate` and
+`--mock status` through it as a non-root user ([`image.yml`](.github/workflows/image.yml)). That check
+needs a Docker daemon, so it stays in CI rather than here.
+
 ## Conventions
 
 The rules below are summarised; [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) says what they protect and

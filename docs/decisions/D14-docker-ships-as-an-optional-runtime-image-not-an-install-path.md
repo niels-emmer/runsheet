@@ -41,6 +41,11 @@
     names `host.docker.internal` and `--network host`.
   - Backups need a writable `HOME` or an explicit directory. A Docker *named volume* is created
     root-owned, so a bind-mounted host directory is the documented form.
+  - The advisory write lock records `socket.gethostname()`, and every `docker run` is a new host, so a
+    container killed mid-write leaves a lock the next one cannot prove is stale — the same rule as a
+    foreign host, deliberately. The README says to delete `instance/.runsheet.lock` once no run is
+    active. A persistent container with a fixed `--hostname` narrows the window but does not close it,
+    because pid liveness is per pid namespace.
   - One more release artifact to keep in parity, and one more thing a change can break: the image is
     built from the tagged commit and verified in CI (`validate`, `--mock status`, a non-root check, and an
     assertion that `/repo` is empty inside it).
