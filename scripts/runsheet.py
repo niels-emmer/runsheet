@@ -34,6 +34,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INSTANCE_DIR = REPO_ROOT / "instance"
+# The on-air audit trail. apply --yes appends one row here after its read-back
+# verification passes. It lives beside instance/, at the checkout root, so a
+# deployment with no docs/ tree simply has nowhere to write and is told so. The
+# override exists for tests; production leaves it None.
+APPLIED_DOC = None
 DEFAULT_CONTAINER = "sub-wave-controller"
 DEFAULT_TIMEOUT = 20
 SENTINEL = "__REDACTED__"
@@ -2575,6 +2580,205 @@ def run_prune(config, plan, force):
     return deleted
 
 
+# --------------------------------------------------------------------------
+# the audit trail: one entry file per verified apply
+#
+# docs/applied.md says "no apply lands on a live station without an entry
+# here", but a hand-written entry drifts from the station the first time a run
+# is forgotten. apply --yes writes its own entry after the read-back proves the
+# writes landed: a file under docs/applied/, plus its row in the index. One file
+# per apply, never rewritten, so parallel branches never collide.
+# --------------------------------------------------------------------------
+
+APPLIED_FIELDS = ("Date", "Commit", "What changed", "Backup ref",
+                  "Verified by", "Listener check")
+
+
+def applied_doc_path():
+    """The audit index beside instance/, unless a test redirected it."""
+    if APPLIED_DOC is not None:
+        return Path(APPLIED_DOC)
+    return INSTANCE_DIR.parent / "docs" / "applied.md"
+
+
+def applied_entry_dir():
+    return applied_doc_path().parent / "applied"
+
+
+def _cell(value):
+    """One Markdown table cell. A pipe or a newline must not split the row."""
+    text = " ".join(str(value).split())
+    return (text or "\u2014").replace("|", "\\|")
+
+
+def _count(number, word):
+    return "%d %s%s" % (number, word, "" if number == 1 else "s")
+
+
+def _capped_list(items, limit=8):
+    """A comma list capped so one entry does not become a paragraph."""
+    items = [str(item) for item in items]
+    if not items:
+        return "none"
+    shown = ", ".join(items[:limit])
+    if len(items) > limit:
+        shown += ", +%d more" % (len(items) - limit)
+    return shown
+
+
+def run_commit():
+    """Short HEAD of the checkout that ran apply, or None outside a git tree."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=str(REPO_ROOT),
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = (result.stdout or "").strip()
+    return value if result.returncode == 0 and value else None
+
+
+def describe_applied(steps, grid_body, repo_blocklist, repo_skills, lock):
+    """What this run sent: the sections and entities apply actually touched."""
+    parts = []
+
+    for step in steps:
+        body = step.get("body") or {}
+        if step.get("entity") != "settings":
+            continue
+        bits = []
+        if "personas" in body:
+            names = [persona.get("name") or persona.get("id") or "?"
+                     for persona in body["personas"]]
+            bits.append("personas %d (%s)" % (len(names), _capped_list(names, 6)))
+            if body.get("activePersonaId"):
+                bits.append("activePersonaId")
+        keys = [key for key in sorted(body) if key not in ("personas", "activePersonaId")]
+        if keys:
+            bits.append("%d settings keys (%s)" % (len(keys), _capped_list(keys)))
+        if bits:
+            parts.append("; ".join(bits))
+
+    shows = []
+    for step in steps:
+        if step.get("entity") != "show":
+            continue
+        show = (step.get("body") or {}).get("show") or {}
+        slug = step.get("slug") or show.get("name") or "?"
+        ident = show.get("id") or (lock.get("shows") or {}).get(slug) or "new id"
+        shows.append("%s=%s" % (slug, ident))
+    if shows:
+        parts.append("shows %d (%s)" % (len(shows), _capped_list(shows)))
+
+    schedule = grid_body.get("schedule") or {}
+    cells = sum(len(day or []) for day in schedule.values())
+    grid = "grid %d cells" % cells
+    if grid_body.get("override"):
+        grid += ", override set"
+    parts.append(grid)
+
+    entries = len(repo_blocklist.get("entries") or [])
+    rules = [rule_slug(rule) for rule in repo_blocklist.get("rules") or []]
+    if entries or rules:
+        parts.append("blocklist %s, %s (%s)"
+                     % (_count(entries, "entry"), _count(len(rules), "rule"),
+                        _capped_list(rules, 4)))
+    if repo_skills:
+        parts.append("skills %d (%s)" % (len(repo_skills), _capped_list(sorted(repo_skills), 4)))
+    return "; ".join(parts)
+
+
+def describe_verification(tier, repo_blocklist, repo_skills):
+    """The read-back result. Says what was and was not proved, per tier."""
+    if tier == 2:
+        text = ("post-apply read-back passed: settings.json and schedule.json compared "
+                "field by field against the sent payload")
+    else:
+        text = ("post-apply read-back passed: /api/schedule (grid and shows) plus the 4 "
+                "persona fields /api/personas exposes; the rest of settings and every "
+                "secret NOT verified")
+    also = []
+    if (repo_blocklist.get("entries") or repo_blocklist.get("rules")):
+        also.append("blocklist")
+    if repo_skills:
+        also.append("skills")
+    if also:
+        text += "; %s also re-read" % " and ".join(also)
+    return text
+
+
+def write_applied_entry(tier, steps, grid_body, backup_ref, repo_blocklist, repo_skills,
+                        lock):
+    """Write one entry file and its index row after a verified apply.
+
+    Never raises: the writes already landed and were proved, so a missing or
+    unwritable docs/ tree must not turn a good apply into a failure. A fork run
+    from an instance/-only deployment has no audit index, and is told so.
+    """
+    index = applied_doc_path()
+    entry_path = None
+    complete = False
+    try:
+        if not index.is_file():
+            print("audit     skipped: %s does not exist (no docs/ tree in this checkout)"
+                  % index)
+            return False
+        index_text = index.read_text(encoding="utf-8")
+        if not any(line.startswith("| Date |") for line in index_text.splitlines()):
+            print("audit     skipped: %s has no '| Date |' audit table to append to" % index)
+            return False
+
+        now = datetime.now(timezone.utc)
+        stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        day = now.strftime("%Y-%m-%d")
+        directory = applied_entry_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        base = "%s-auto-apply-%s" % (day, now.strftime("%H%M%SZ"))
+        for suffix in ("", "-2", "-3", "-4", "-5"):
+            candidate = directory / (base + suffix + ".md")
+            if not candidate.exists():
+                entry_path = candidate
+                break
+        if entry_path is None:
+            print("warning   audit entry not written: no free filename under %s" % directory)
+            return False
+
+        title = "apply --yes at tier %d" % tier
+        body = "\n".join((
+            "# %s \u2014 %s" % (stamp, title),
+            "",
+            "- **Date:** %s" % stamp,
+            "- **Commit:** %s" % (run_commit() or "\u2014"),
+            "- **What changed:** %s" % describe_applied(
+                steps, grid_body, repo_blocklist, repo_skills, lock),
+            "- **Backup ref:** %s" % (backup_ref or "\u2014 (--no-backup)"),
+            "- **Verified by:** %s" % describe_verification(
+                tier, repo_blocklist, repo_skills),
+            "- **Listener check:** \u2014 (not checked by apply)",
+            "",
+        ))
+        entry_path.write_text(body, encoding="utf-8")
+
+        row = "| %s | [%s](applied/%s) |\n" % (_cell(day), _cell(title), entry_path.name)
+        with index.open("a", encoding="utf-8") as handle:
+            if index_text and not index_text.endswith("\n"):
+                handle.write("\n")
+            handle.write(row)
+        complete = True
+    except (OSError, UnicodeDecodeError) as exc:
+        print("warning   audit entry not written: %s" % exc)
+        return False
+    finally:
+        if entry_path is not None and not complete:
+            # Do not leave an entry the index does not point at.
+            try:
+                entry_path.unlink()
+            except OSError:
+                pass
+    print("audit     %s + index row" % entry_path)
+    return True
+
+
 def cmd_apply(config, args):
     tier, detail = detect_tier(config)
     print("tier      %s" % TIER_LABEL[tier], flush=True)
@@ -2682,10 +2886,12 @@ def cmd_apply(config, args):
                 "the station is mid-show (%s). Writing into a live programme is not the "
                 "default: pass --force-now if that is intended." % active.get("name"))
 
+    backup_ref = None
     if args.no_backup:
         print("backup    skipped (--no-backup)")
     elif tier == 2:
         destination, _ = take_backup(config, args.backup_dir)
+        backup_ref = destination
         print("backup    %s" % destination)
     else:
         raise ToolError(
@@ -2765,6 +2971,12 @@ def cmd_apply(config, args):
         print("verified  grid, shows and the 4 persona fields /api/personas exposes; the rest "
               "of settings (and every secret) is unreadable at tier 1, so it was NOT verified")
     print("result    %d step(s) written; ids.lock.json updated" % (len(steps) + 1))
+
+    # The audit row goes after the read-back and before prune: only a verified
+    # write earns one, and a prune that is later refused must not erase the fact
+    # that the writes landed.
+    write_applied_entry(tier, steps, grid_body, backup_ref, repo_blocklist,
+                        repo_skills, lock)
 
     # Prune last, after the writes and after verification: a failed write must
     # never trigger a delete, and verification raising stops us before this line.

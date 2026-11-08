@@ -32,6 +32,15 @@ All notable changes to this project are documented here. The format is based on
   it, and a set-but-missing path fails as a configuration error instead of silently falling back.
   Documented in `.env.example` and the README's "Getting started"; pinned by
   [`tests/test_env_file.py`](tests/test_env_file.py).
+- **`apply --yes` records itself in `docs/applied/`.** After the post-apply read-back proves the
+  writes landed, the tool writes one audit entry (`<YYYY-MM-DD>-auto-apply-<HHMMSSZ>.md`) and adds its
+  index row to `docs/applied.md`, naming the UTC time, the checkout commit, what it sent (settings keys,
+  shows, grid cells, blocklist entries and rules, skills) and what the read-back could and could not
+  verify. The trail previously depended on someone remembering to type the entry, so it drifted from the
+  station the first time a run was forgotten. A dry run and a failed verification write nothing, existing
+  entries are never rewritten, and a checkout without `docs/` (an `instance/`-only fork) skips the write
+  with a warning instead of failing an apply that already landed. Pinned by
+  [`tests/test_apply_audit.py`](tests/test_apply_audit.py), which uses the shared mock station.
 - **Tier 2 is reachable from a bare ssh host.** `status` at tier 1 now probes the host it is given: one
   read-only ssh round trip lists the running containers, inspects their mounts, and reports the first
   mount that already contains a `settings.json`, printing the exact `SUBWAVE_CONTAINER=` and
