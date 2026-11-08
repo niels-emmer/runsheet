@@ -109,6 +109,17 @@ class ContentionTests(LockTestCase):
         self.assertIn("locked by another runsheet command", output)
         self.assertFalse((self.root / "skills" / "dj-blocked").exists())
 
+    def test_mock_commands_take_the_lock_too(self):
+        # --mock changes the station, not the checkout: a mock apply still races
+        # on instance/ with a live command, so it must contend on the same lock.
+        self.seed_character()
+        self.hold_lock(os.getpid(), command="apply")
+
+        code, output = self.run_cli("--mock", "apply", "--yes")
+
+        self.assertEqual(code, 1, output)
+        self.assertIn("locked by another runsheet command", output)
+
     def test_pull_force_fails_fast_while_a_lock_is_held(self):
         self.seed_character()
         self.hold_lock(os.getpid(), command="apply")
