@@ -9,6 +9,22 @@ You run a SUB/WAVE station. This lets you look after it by talking to your agent
 through the admin console. Your station's settings live as files in a git repo, so you can see what
 changed, undo it, and keep a history of how the station got to sound the way it does.
 
+## tldr;
+
+SUB/WAVE gives you a station. This gives you a way to change it that you can check first and undo
+afterwards. Install it if any of these matter:
+
+- **Your config is a git repo, not a web form.** Every host, show, hour and ban is a file you can diff,
+  blame, branch and revert — so "what changed last Tuesday, and who changed it" has an answer.
+- **Nothing goes live unexamined.** `apply` is a dry run by default, prints every change, waits for your
+  `--yes`, then reads the station back and fails loudly if a field did not actually land.
+- **An agent can do the authoring.** Adding a host, writing their soul, creating a show and filling grid
+  cells becomes a conversation instead of a form — with the same diff and confirmation in front of it.
+- **Backups that can actually be restored.** The console's export drops the schedule, every show and the
+  blocklist; this captures them and writes a note saying where each file goes back.
+- **Live control stays separate and deliberate.** Reads, edits and on-air actions are distinct doors, so a
+  routine sync can never accidentally skip a track or say something on air.
+
 ## What you can ask for
 
 ### Finding out what is going on
