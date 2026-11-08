@@ -50,20 +50,18 @@ docker run --rm -v "$PWD:/repo" \
 Tags are release tags, so `1.1.0` is the first one that carries this image — `v1.0.0` predates both the
 `Dockerfile` and the workflow that publishes it.
 
-Six things behave differently inside a container, and each has one fix:
+Five things behave differently inside a container, and each has one fix:
 
 - **`127.0.0.1` is the container, not your machine.** Point `SUBWAVE_BASE_URL` at
   `host.docker.internal` (add `--add-host=host.docker.internal:host-gateway` on Linux), or run with
   `--network host` on Linux.
-- **Files it writes will not be yours.** On Linux the image's uid (10001) owns whatever it creates in
-  `instance/` and `docs/applied*`. `--user "$(id -u):$(id -g)"` keeps them yours — but read the next
-  bullet first, because it costs you tier 2.
-- **Tier 2 needs the keys mounted and a uid the container can look up.** Mount
-  `-v "$HOME/.ssh:/home/runsheet/.ssh:ro"`, and note `ssh` exits 255 with `No user exists for uid …` for
-  any uid missing from `/etc/passwd`, so `--user` with your own uid leaves you tier 1 only. Keep the
-  default uid 10001 when you need host access; to have both, mount an `/etc/passwd` that names your uid
-  with `/home/runsheet` as its home. A host new to the mounted `known_hosts` fails to verify, so connect
-  once from the host first.
+- **Ownership and ssh are one decision.** A bind mount keeps the host's ownership, so the default uid
+  10001 can neither write your checkout on Linux (`pull` and `apply` fail with EACCES) nor read a `600`
+  ssh key. `--user "$(id -u):$(id -g)"` fixes both, except that `ssh` exits 255 with
+  `No user exists for uid …` when your uid has no `/etc/passwd` entry. So on Linux run with both: mount
+  `-v "$HOME/.ssh:/home/runsheet/.ssh:ro"`, pass `--user "$(id -u):$(id -g)"`, and mount a passwd file
+  that names your uid with `/home/runsheet` as its home (`-v ./runsheet.passwd:/etc/passwd:ro`). A host
+  new to the mounted `known_hosts` still fails to verify, so connect once from the host first.
 - **Backups go where you mount them.** `-v "$HOME/.runsheet-backups:/backups"` with
   `backup --dir /backups` (or `apply --backup-dir /backups`); otherwise the default is
   `~/.subwave-backups` inside the container and dies with it.
@@ -75,6 +73,17 @@ Six things behave differently inside a container, and each has one fix:
   stay writable — the audit entry is written under the mount, not an image layer. What becomes read-only
   is the image's own `HOME` and `/tmp`, so send backups to a mount (`--dir`, above) instead of the
   default.
+
+On Linux with host access, that combination is:
+
+```sh
+printf 'root:x:0:0:root:/root:/bin/sh\nme:x:%s:%s::/home/runsheet:/bin/sh\n' \
+    "$(id -u)" "$(id -g)" > "$HOME/.runsheet.passwd"
+docker run --rm -v "$PWD:/repo" --user "$(id -u):$(id -g)" \
+    -v "$HOME/.runsheet.passwd:/etc/passwd:ro" \
+    -v "$HOME/.ssh:/home/runsheet/.ssh:ro" \
+    --env-file .env ghcr.io/niels-emmer/runsheet:1.1.0 status
+```
 
 Prefer to keep credentials out of `docker inspect`? Mount a shared credentials file and set
 `RUNSHEET_ENV_FILE` to it instead of using `--env-file`.

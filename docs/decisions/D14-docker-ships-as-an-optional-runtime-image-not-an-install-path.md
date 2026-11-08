@@ -31,13 +31,15 @@
     `docker build` still uploads the context to the daemon, so a build started from a working checkout
     must not carry a live `.env` or a station's `instance/` into a layer or the build cache. Pinned by
     [`tests/test_docker.py`](../../tests/test_docker.py), which also fails if a `COPY`/`ADD` ever reappears.
-  - Unprivileged by default (uid 10001), and that uid is coupled to tier 2: `ssh` resolves the calling
-    user with `getpwuid` and exits 255 (`No user exists for uid …`) for a uid missing from `/etc/passwd`,
-    so `--user "$(id -u):$(id -g)"` — the flag that keeps written files owned by the operator — leaves
-    tier 1 only. A uid-agnostic image would need a shell in front of the exec-form entrypoint, which
-    `mcp-server` and signal handling both depend on, so the trade-off is documented instead: keep uid
-    10001 for host access, or mount an `/etc/passwd` naming the operator's uid. Root-owned `instance/`
-    files are the worse failure, so root is not the default.
+  - Unprivileged by default (uid 10001), which couples ownership and tier 2 on a Linux bind mount: a
+    mounted checkout keeps the host's ownership, so 10001 can neither write `instance/` (EACCES on `pull`
+    and `apply`) nor read a `600` ssh key — and `ssh` refuses to run at all as a uid missing from
+    `/etc/passwd` (`No user exists for uid …`, exit 255). The working combination is
+    `--user "$(id -u):$(id -g)"` plus a mounted `/etc/passwd` naming that uid, which the README documents
+    rather than the image hiding. Docker Desktop maps ownership, so the EACCES half is Linux-only.
+    Making the image uid-agnostic would mean rewriting `/etc/passwd` at start-up, and that file is
+    root-owned: it is a root entrypoint dropping privileges, a larger change than this packaging
+    decision.
   - `SUBWAVE_BASE_URL` must not be `127.0.0.1`: inside the container that is the container. The README
     names `host.docker.internal` and `--network host`.
   - Backups need an explicit directory: `backup --dir` and `apply --backup-dir`. `HOME` works too, but a
