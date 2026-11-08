@@ -4962,16 +4962,33 @@ MCP_TOOL_DEFINITIONS = (
 MCP_READ_ONLY_TOOLS = tuple(tool["name"] for tool in MCP_TOOL_DEFINITIONS)
 
 
+class ToolArgumentError(Exception):
+    """A bad tool argument (JSON-RPC -32602), not a failing command.
+
+    Kept separate from a command failure on purpose: blaming the arguments for
+    a corrupt file on disk is a protocol error the client cannot act on.
+    """
+
+
 def _mcp_capture(func, config, args):
-    """Run a cmd_* function and return (exit code, its stdout as text)."""
+    """Run a cmd_* function. Returns (exit code, stdout, failure or None).
+
+    A command that raises is still a tool RESULT, not a protocol error: the
+    output captured before the failure is kept and the exception becomes the
+    error text, so the client sees isError=true (and can read the message)
+    instead of a -32602 that blames arguments for a bad file on disk.
+    """
     buffer = io.StringIO()
-    with contextlib.redirect_stdout(buffer):
-        code = func(config, args)
-    return code, buffer.getvalue()
+    try:
+        with contextlib.redirect_stdout(buffer):
+            code = func(config, args)
+    except Exception as exc:
+        return EXIT_CONFIG, buffer.getvalue(), "runsheet: %s" % exc
+    return code, buffer.getvalue(), None
 
 
 def mcp_call_tool(name, arguments):
-    """Run one of the three read-only tools. Returns (exit code, output text).
+    """Run one of the three read-only tools. Returns (exit code, output, failure).
 
     This function is the whole tool surface. It deliberately calls the existing
     command implementations rather than reimplementing them, and it has no
@@ -4979,15 +4996,16 @@ def mcp_call_tool(name, arguments):
     cmd_diff and cmd_validate.
     """
     arguments = arguments or {}
+    if name == "runsheet_validate":
+        root = arguments.get("dir")
+        if root is not None and not isinstance(root, str):
+            raise ToolArgumentError("dir must be a string")
     config = Config()
     if name == "runsheet_status":
         return _mcp_capture(cmd_status, config, argparse.Namespace())
     if name == "runsheet_diff":
         return _mcp_capture(cmd_diff, config, argparse.Namespace())
     if name == "runsheet_validate":
-        root = arguments.get("dir")
-        if root is not None and not isinstance(root, str):
-            raise ValueError("dir must be a string")
         return _mcp_capture(cmd_validate, config, argparse.Namespace(dir=root))
     raise KeyError(name)
 
@@ -5007,8 +5025,8 @@ def _mcp_tool_result(code, text, is_error=False):
     The text is the command's own stdout, unchanged, so a client can compare it
     with the CLI. A non-zero exit is not automatically an error: `diff` exits 1
     for drift and `validate` exits 1 for a failed check - both are answers.
-    Only an unreadable input or a refused configuration (EXIT_CONFIG) is an
-    error, because then there is no report to trust.
+    isError is for "the command could not produce a report" (a raised exception
+    or an unreadable input), because then there is no trustworthy answer.
     """
     return {
         "content": [{"type": "text", "text": text}],
@@ -5060,13 +5078,14 @@ def mcp_handle(message):
                 "unknown tool %r; this server exposes only: %s"
                 % (name, ", ".join(MCP_READ_ONLY_TOOLS)))
         try:
-            code, text = mcp_call_tool(name, arguments)
-        except ValueError as exc:
+            code, text, failure = mcp_call_tool(name, arguments)
+        except ToolArgumentError as exc:
             return _mcp_error(identifier, -32602, str(exc))
-        except (ConfigError, ToolError) as exc:
-            return _mcp_result(
-                identifier,
-                _mcp_tool_result(EXIT_CONFIG, "runsheet: %s" % exc, is_error=True))
+        if failure:
+            if text and not text.endswith("\n"):
+                text += "\n"
+            return _mcp_result(identifier,
+                               _mcp_tool_result(code, text + failure + "\n", is_error=True))
         return _mcp_result(identifier,
                            _mcp_tool_result(code, text, is_error=(code == EXIT_CONFIG)))
     if method.startswith("notifications/"):
