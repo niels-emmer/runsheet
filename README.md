@@ -1,6 +1,6 @@
-# subwave-marvin
+# runsheet
 
-[![CI](https://github.com/niels-emmer/subwave-marvin/actions/workflows/ci.yml/badge.svg)](https://github.com/niels-emmer/subwave-marvin/actions/workflows/ci.yml)
+[![CI](https://github.com/niels-emmer/runsheet/actions/workflows/ci.yml/badge.svg)](https://github.com/niels-emmer/runsheet/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 You run a SUB/WAVE station. This lets you look after it by talking to your agent instead of clicking
@@ -129,8 +129,8 @@ That second path is the only one that skips the review, and it never touches you
 ## Getting started
 
 ```sh
-git clone https://github.com/niels-emmer/subwave-marvin.git
-cd subwave-marvin
+git clone https://github.com/niels-emmer/runsheet.git
+cd runsheet
 cp .env.example .env        # the station's address and its admin password
 ```
 

@@ -26,6 +26,9 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **Renamed from `subwave-marvin` to `runsheet`.** The script is now `scripts/runsheet.py` and the repo
+  `niels-emmer/runsheet`. The old name implied this tool was part of the SUB/WAVE project; it is not.
+  `SUB/WAVE` and the `SUBWAVE_*` variables still name the station, not the tool, and are unchanged.
 - The README's "Getting started" starts at `git clone`. It did not before: it opened with `python3` and
   `.env`, so a stranger's first step was missing, and `tests/test_smoke.py` could not catch it because the
   smoke test begins *after* the clone.
@@ -110,5 +113,5 @@ session: author the station's character, read what is actually live, and push re
   — why each choice was made; [`docs/applied.md`](docs/applied.md) — the on-air audit trail.
 - [`docs/public-readiness.md`](docs/public-readiness.md) — the checklist for publishing this repo.
 
-[Unreleased]: https://github.com/niels-emmer/subwave-marvin/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/niels-emmer/subwave-marvin/releases/tag/v1.0.0
+[Unreleased]: https://github.com/niels-emmer/runsheet/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/niels-emmer/runsheet/releases/tag/v1.0.0

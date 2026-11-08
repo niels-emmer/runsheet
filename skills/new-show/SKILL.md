@@ -25,15 +25,15 @@ this skill is only the order of operations.
 
 ## Preconditions
 
-1. **Announce the tier.** `python3 scripts/subwave.py status` prints it. Authoring needs a full
+1. **Announce the tier.** `python3 scripts/runsheet.py status` prints it. Authoring needs a full
    `instance/`, which only a tier-2 pull produces. At tier 1 the reads are trimmed (shows come back
    with 7 of 26 fields), so a lossy capture is **not** an authoring base and must never be applied.
    If there is no full `instance/` and no host access, stop and ask for tier 2 — do not fill the
    missing fields with guesses.
-2. **Start from a synced repo.** `python3 scripts/subwave.py diff` must exit 0. If it reports drift,
+2. **Start from a synced repo.** `python3 scripts/runsheet.py diff` must exit 0. If it reports drift,
    pull first (tier 2, plain `pull`, no `--force`) and re-check. Never pull with `--force` after you
    have started editing.
-3. **Back up first** if the tier allows it: `python3 scripts/subwave.py backup` (see
+3. **Back up first** if the tier allows it: `python3 scripts/runsheet.py backup` (see
    [`backup`](../backup/SKILL.md)). At tier 1 say out loud that no backup is possible.
 4. **Check what is on air** and prefer an off-air window. The station is live: the change alters the
    next track and the next talk segment.
@@ -51,7 +51,7 @@ show uses two hosts (`banter` + `guestPersonaIds`). Do not invent a show that wa
 Only if `instance/` is missing (tier 2):
 
 ```sh
-python3 scripts/subwave.py pull
+python3 scripts/runsheet.py pull
 ```
 
 Then locate the hosting persona and the nearest existing show to copy the shape from:
@@ -114,7 +114,7 @@ until it is cleared.
 ### 5. Dry-run
 
 ```sh
-python3 scripts/subwave.py apply
+python3 scripts/runsheet.py apply
 ```
 
 `apply` dry-runs by default and sends nothing at all; `--dry-run` is accepted for emphasis. Read the
@@ -126,7 +126,7 @@ Paste the dry-run summary together with the changed-cell list, and ask for an ex
 then run it for real:
 
 ```sh
-python3 scripts/subwave.py apply --yes
+python3 scripts/runsheet.py apply --yes
 ```
 
 The write refuses while a show is on air unless you add `--force-now`, and at tier 1 unless you add
@@ -136,8 +136,8 @@ work around them. Announce that the station is live when you do write.
 ## Verify
 
 ```sh
-python3 scripts/subwave.py status    # show count +1, grid 168/168 filled, on air
-python3 scripts/subwave.py diff      # exit 0: repo and live agree
+python3 scripts/runsheet.py status    # show count +1, grid 168/168 filled, on air
+python3 scripts/runsheet.py diff      # exit 0: repo and live agree
 ```
 
 Then confirm the mapping rather than trusting it:

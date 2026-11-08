@@ -1,6 +1,7 @@
 # Architecture
 
-How `subwave-marvin` is put together, and why it is shaped this way. This is the durable description:
+How `runsheet` is put together, and why it is shaped this way. This tool is called **runsheet**; what it
+manages is a **SUB/WAVE** station. This is the durable description:
 if you are changing the tool, these are the facts a change has to survive. What is *left to do* lives in
 [PLAN.md](PLAN.md); the operating rules an agent follows live in [AGENTS.md](../AGENTS.md); the reasoning
 behind each choice, with the alternatives that were rejected, is in [decision-log.md](decision-log.md).
@@ -13,7 +14,7 @@ Three parties, and the toolkit is the only one that is neither the station nor t
   agent (Claude Code, Codex, OpenCode, anything that reads AGENTS.md)
      │  reads AGENTS.md + skills/<name>/SKILL.md, runs one command at a time
      ▼
-  scripts/subwave.py ───── admin HTTP (Basic) ──────►  controller  ──►  Icecast
+  scripts/runsheet.py ───── admin HTTP (Basic) ──────►  controller  ──►  Icecast
      │                                                 (upstream image)  Liquidsoap
      │                                                 └──► Navidrome (library)
      │  ───── MCP /api/mcp (JSON-RPC) ──────────────►  what is on air, now
@@ -184,7 +185,7 @@ never captured, never diffed, never applied, never in git.
 Validation runs *before* any write, because a typo'd field is silently dropped by the shallow merge rather
 than rejected — it is the only thing between a typo and a live config change.
 
-- Field specs live in `scripts/subwave.py` (`PERSONA_FIELDS`, `SHOW_FIELDS`, `PERSONA_ENUMS`,
+- Field specs live in `scripts/runsheet.py` (`PERSONA_FIELDS`, `SHOW_FIELDS`, `PERSONA_ENUMS`,
   `SHOW_ENUMS`, `PERSONA_TYPES`, `SHOW_TYPES`), not in a separate schema module.
 - Enums are copied from upstream (`controller/src/schemas/persona.ts` and `show.ts`) in the product's
   ladder order, because the station bumps a persona "one rung" with `indexOf`. `moods` is deliberately
@@ -222,7 +223,7 @@ AGENTS.md                 agent-agnostic operating rules; the hub every agent re
 README.md                 for the person who runs the station
 CONTRIBUTING.md           setup, checks, conventions
 SECURITY.md               threat model and accepted risks
-scripts/subwave.py        the tool: one file, standard library only
+scripts/runsheet.py        the tool: one file, standard library only
 scripts/check-secrets.sh  the commit gate and CI check
 skills/<name>/SKILL.md    agent procedures (discovered through AGENTS.md)
 examples/demo/            committed fictional station, same shape as instance/

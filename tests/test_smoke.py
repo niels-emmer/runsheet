@@ -66,7 +66,7 @@ class SmokeTest(unittest.TestCase):
 
     def run_tool(self, *args):
         result = subprocess.run(
-            [sys.executable, str(self.tmp / "scripts" / "subwave.py")] + list(args),
+            [sys.executable, str(self.tmp / "scripts" / "runsheet.py")] + list(args),
             cwd=self.tmp, env=self.env(), capture_output=True, text=True, timeout=120)
         return result
 
@@ -78,7 +78,7 @@ class SmokeTest(unittest.TestCase):
         self.assertFalse((self.tmp / "instance").exists())
         self.assertFalse((self.tmp / ".env").exists())
         self.assertTrue((self.tmp / "AGENTS.md").exists())
-        self.assertTrue((self.tmp / "scripts" / "subwave.py").exists())
+        self.assertTrue((self.tmp / "scripts" / "runsheet.py").exists())
 
     # -- scenario A: the read path at tier 1 -------------------------------
     def test_documented_read_sequence_at_tier_1(self):

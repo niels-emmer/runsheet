@@ -1,4 +1,4 @@
-"""Tests for scripts/subwave.py. No network, no ssh, no instance/ access.
+"""Tests for scripts/runsheet.py. No network, no ssh, no instance/ access.
 
 Fixtures come from examples/demo (the fictional station), never from instance/.
 """
@@ -19,13 +19,13 @@ DEMO = ROOT / "examples" / "demo" / "character"
 
 
 def load_tool():
-    spec = importlib.util.spec_from_file_location("subwave", ROOT / "scripts" / "subwave.py")
+    spec = importlib.util.spec_from_file_location("runsheet", ROOT / "scripts" / "runsheet.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-subwave = load_tool()
+runsheet = load_tool()
 
 
 # -- fixtures ---------------------------------------------------------------
@@ -79,7 +79,7 @@ def demo_documents():
 class RedactionTests(unittest.TestCase):
     def setUp(self):
         self.settings, _ = demo_documents()
-        self.redacted, self.count = subwave.redact(self.settings)
+        self.redacted, self.count = runsheet.redact(self.settings)
 
     def test_every_configured_path_becomes_the_sentinel(self):
         expected = [
@@ -95,7 +95,7 @@ class RedactionTests(unittest.TestCase):
             node = self.redacted
             for key in path:
                 node = node[key]
-            self.assertEqual(node, subwave.SENTINEL, "path %s not redacted" % (path,))
+            self.assertEqual(node, runsheet.SENTINEL, "path %s not redacted" % (path,))
 
     def test_redaction_count_is_every_value_it_touched(self):
         # 11 named paths plus two llm.keys children.
@@ -112,7 +112,7 @@ class RedactionTests(unittest.TestCase):
             if isinstance(node, dict):
                 for key, value in node.items():
                     yield from walk(value, "%s.%s" % (path, key) if path else key)
-            elif node == subwave.SENTINEL:
+            elif node == runsheet.SENTINEL:
                 yield path
 
         marked = set(walk(self.redacted))
@@ -127,7 +127,7 @@ class RedactionTests(unittest.TestCase):
 
         collect(self.settings)
         for path in marked:
-            self.assertNotEqual(originals.get(path), subwave.SENTINEL,
+            self.assertNotEqual(originals.get(path), runsheet.SENTINEL,
                                 "sentinel replaced a value that was not a secret: %s" % path)
 
     def test_original_document_is_not_mutated(self):
@@ -138,24 +138,24 @@ class RedactionTests(unittest.TestCase):
 
 class SlugTests(unittest.TestCase):
     def test_basic_slug(self):
-        self.assertEqual(subwave.slugify("Nell Harrow"), "nell-harrow")
-        self.assertEqual(subwave.slugify("  The  Late   Show! "), "the-late-show")
+        self.assertEqual(runsheet.slugify("Nell Harrow"), "nell-harrow")
+        self.assertEqual(runsheet.slugify("  The  Late   Show! "), "the-late-show")
 
     def test_collisions_get_numeric_suffixes(self):
         items = [{"id": "p_1", "name": "Same Name"}, {"id": "p_2", "name": "Same Name"},
                  {"id": "p_3", "name": "Same Name"}]
-        self.assertEqual(subwave.assign_slugs(items, {}),
+        self.assertEqual(runsheet.assign_slugs(items, {}),
                          {"same-name": "p_1", "same-name-2": "p_2", "same-name-3": "p_3"})
 
     def test_a_rename_keeps_the_old_slug_via_the_lockfile(self):
         previous = {"old-host": "p_1"}
         items = [{"id": "p_1", "name": "Completely New Name"}]
-        self.assertEqual(subwave.assign_slugs(items, previous), {"old-host": "p_1"})
+        self.assertEqual(runsheet.assign_slugs(items, previous), {"old-host": "p_1"})
 
     def test_known_ids_do_not_consume_new_slugs(self):
         previous = {"keeper": "p_1"}
         items = [{"id": "p_1", "name": "Keeper"}, {"id": "p_2", "name": "Keeper"}]
-        self.assertEqual(subwave.assign_slugs(items, previous),
+        self.assertEqual(runsheet.assign_slugs(items, previous),
                          {"keeper": "p_1", "keeper-2": "p_2"})
 
 
@@ -166,14 +166,14 @@ class SplitTests(unittest.TestCase):
         self.settings, self.schedule = demo_documents()
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self._saved = subwave.INSTANCE_DIR
-        subwave.INSTANCE_DIR = self.tmp
-        self.addCleanup(lambda: setattr(subwave, "INSTANCE_DIR", self._saved))
+        self._saved = runsheet.INSTANCE_DIR
+        runsheet.INSTANCE_DIR = self.tmp
+        self.addCleanup(lambda: setattr(runsheet, "INSTANCE_DIR", self._saved))
 
     def test_round_trip_preserves_ids_and_content(self):
-        live = subwave.build_live_model(self.settings, self.schedule)
-        subwave.write_instance(live, {})
-        repo = subwave.load_instance_model(self.tmp)
+        live = runsheet.build_live_model(self.settings, self.schedule)
+        runsheet.write_instance(live, {})
+        repo = runsheet.load_instance_model(self.tmp)
 
         self.assertEqual(sorted(repo["personas"]), sorted(live["personas"]))
         self.assertEqual(sorted(repo["shows"]), sorted(live["shows"]))
@@ -184,38 +184,38 @@ class SplitTests(unittest.TestCase):
         self.assertEqual(repo["settings"], live["settings"])
 
     def test_diff_is_clean_straight_after_a_pull(self):
-        live = subwave.build_live_model(self.settings, self.schedule)
-        subwave.write_instance(live, {})
-        repo = subwave.load_instance_model(self.tmp)
-        self.assertEqual(subwave.drift_count(subwave.compare_models(repo, live)), 0)
+        live = runsheet.build_live_model(self.settings, self.schedule)
+        runsheet.write_instance(live, {})
+        repo = runsheet.load_instance_model(self.tmp)
+        self.assertEqual(runsheet.drift_count(runsheet.compare_models(repo, live)), 0)
 
     def test_character_layer_files_exist(self):
-        live = subwave.build_live_model(self.settings, self.schedule)
-        subwave.write_instance(live, {})
+        live = runsheet.build_live_model(self.settings, self.schedule)
+        runsheet.write_instance(live, {})
         self.assertTrue((self.tmp / "settings.json").is_file())
         self.assertTrue((self.tmp / "character" / "character.json").is_file())
         self.assertTrue((self.tmp / "character" / "schedule.json").is_file())
         self.assertTrue((self.tmp / "ids.lock.json").is_file())
 
     def test_settings_file_excludes_personas_and_active_persona(self):
-        live = subwave.build_live_model(self.settings, self.schedule)
-        subwave.write_instance(live, {})
+        live = runsheet.build_live_model(self.settings, self.schedule)
+        runsheet.write_instance(live, {})
         written = json.loads((self.tmp / "settings.json").read_text())
         self.assertNotIn("personas", written)
         self.assertNotIn("activePersonaId", written)
         self.assertIn("stream", written)
 
     def test_lockfile_records_both_directions(self):
-        live = subwave.build_live_model(self.settings, self.schedule)
-        subwave.write_instance(live, {})
+        live = runsheet.build_live_model(self.settings, self.schedule)
+        runsheet.write_instance(live, {})
         lock = json.loads((self.tmp / "ids.lock.json").read_text())
         for slug, id_ in lock["shows"].items():
             self.assertEqual(lock["ids"][id_], slug)
         self.assertEqual(lock["activePersonaId"], self.settings["activePersonaId"])
 
     def test_secrets_are_redacted_on_disk(self):
-        live = subwave.build_live_model(self.settings, self.schedule)
-        subwave.write_instance(live, {})
+        live = runsheet.build_live_model(self.settings, self.schedule)
+        runsheet.write_instance(live, {})
         blob = (self.tmp / "settings.json").read_text()
         for secret in ("not-a-real-password", "fake-llm-key", "fake-lastfm-secret"):
             self.assertNotIn(secret, blob)
@@ -228,13 +228,13 @@ class GridTests(unittest.TestCase):
         self.settings, self.schedule = demo_documents()
 
     def test_all_168_cells_survive_the_split(self):
-        live = subwave.build_live_model(self.settings, self.schedule)
+        live = runsheet.build_live_model(self.settings, self.schedule)
         cells = [cell for day in live["grid"].values() for cell in day]
         self.assertEqual(len(cells), 168)
         self.assertTrue(all(cells))
 
     def test_every_cell_resolves_to_a_known_show(self):
-        live = subwave.build_live_model(self.settings, self.schedule)
+        live = runsheet.build_live_model(self.settings, self.schedule)
         known = set(live["shows"])
         for day, cells in live["grid"].items():
             for cell in cells:
@@ -243,11 +243,11 @@ class GridTests(unittest.TestCase):
     def test_grid_is_written_as_slugs(self):
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, tmp, True)
-        saved = subwave.INSTANCE_DIR
-        subwave.INSTANCE_DIR = tmp
-        self.addCleanup(lambda: setattr(subwave, "INSTANCE_DIR", saved))
-        live = subwave.build_live_model(self.settings, self.schedule)
-        subwave.write_instance(live, {})
+        saved = runsheet.INSTANCE_DIR
+        runsheet.INSTANCE_DIR = tmp
+        self.addCleanup(lambda: setattr(runsheet, "INSTANCE_DIR", saved))
+        live = runsheet.build_live_model(self.settings, self.schedule)
+        runsheet.write_instance(live, {})
         written = json.loads((tmp / "character" / "schedule.json").read_text())
         values = {cell for cells in written["schedule"].values() for cell in cells}
         self.assertTrue(all("_" not in value for value in values),
@@ -258,35 +258,35 @@ class GridTests(unittest.TestCase):
 
 class TierTests(unittest.TestCase):
     def config(self, **env):
-        return subwave.Config(dotenv={}, environ=env)
+        return runsheet.Config(dotenv={}, environ=env)
 
     def test_no_host_settings_is_tier_1(self):
-        tier, detail = subwave.detect_tier(self.config())
+        tier, detail = runsheet.detect_tier(self.config())
         self.assertEqual(tier, 1)
         self.assertIn("SUBWAVE_HOST", detail)
         self.assertIn("SUBWAVE_STATE_DIR", detail)
 
     def test_host_without_state_dir_is_tier_1(self):
-        tier, _ = subwave.detect_tier(self.config(SUBWAVE_HOST="somehost"))
+        tier, _ = runsheet.detect_tier(self.config(SUBWAVE_HOST="somehost"))
         self.assertEqual(tier, 1)
 
     def test_state_dir_without_host_is_tier_1(self):
-        tier, _ = subwave.detect_tier(self.config(SUBWAVE_STATE_DIR="/var/sub-wave"))
+        tier, _ = runsheet.detect_tier(self.config(SUBWAVE_STATE_DIR="/var/sub-wave"))
         self.assertEqual(tier, 1)
 
     def test_both_set_but_probe_fails_is_tier_1_with_the_reason(self):
         config = self.config(SUBWAVE_HOST="somehost", SUBWAVE_STATE_DIR="/var/sub-wave")
-        tier, detail = subwave.detect_tier(config, probe=lambda: (False, "host probe failed: nope"))
+        tier, detail = runsheet.detect_tier(config, probe=lambda: (False, "host probe failed: nope"))
         self.assertEqual(tier, 1)
         self.assertIn("nope", detail)
 
     def test_both_set_and_probe_ok_is_tier_2(self):
         config = self.config(SUBWAVE_HOST="somehost", SUBWAVE_STATE_DIR="/var/sub-wave")
-        tier, _ = subwave.detect_tier(config, probe=lambda: (True, "ok"))
+        tier, _ = runsheet.detect_tier(config, probe=lambda: (True, "ok"))
         self.assertEqual(tier, 2)
 
     def test_environment_beats_dotenv(self):
-        config = subwave.Config(dotenv={"SUBWAVE_BASE_URL": "http://from-file"},
+        config = runsheet.Config(dotenv={"SUBWAVE_BASE_URL": "http://from-file"},
                                 environ={"SUBWAVE_BASE_URL": "http://from-env"})
         self.assertEqual(config.base_url, "http://from-env")
 
@@ -306,14 +306,14 @@ class SshQuotingTests(unittest.TestCase):
     NASTY = "skills/o'brien; touch pwned; 'x/SKILL.md"
 
     def setUp(self):
-        self.config = subwave.Config(dotenv={}, environ={
+        self.config = runsheet.Config(dotenv={}, environ={
             "SUBWAVE_HOST": "station.example",
             "SUBWAVE_STATE_DIR": "/var/sub-wave",
             "SUBWAVE_CONTAINER": "sub-wave-controller",
         })
         self.commands = []
-        self._saved = subwave.ssh_run
-        self.addCleanup(lambda: setattr(subwave, "ssh_run", self._saved))
+        self._saved = runsheet.ssh_run
+        self.addCleanup(lambda: setattr(runsheet, "ssh_run", self._saved))
 
         def fake(config, command, **kwargs):
             self.commands.append(command)
@@ -321,16 +321,16 @@ class SshQuotingTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0, stdout=b"{}", stderr=b"")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        subwave.ssh_run = fake
+        runsheet.ssh_run = fake
 
     def test_a_state_file_read_quotes_the_path(self):
-        subwave.read_state_file(self.config, "settings.json")
+        runsheet.read_state_file(self.config, "settings.json")
         self.assertEqual(self.commands, [
             "docker exec sub-wave-controller cat %s"
             % shlex.quote("/var/sub-wave/settings.json")])
 
     def test_a_path_with_a_quote_semicolon_and_space_is_one_argument(self):
-        subwave.SshStateSource(self.config).read_bytes(self.NASTY)
+        runsheet.SshStateSource(self.config).read_bytes(self.NASTY)
         expected = "/var/sub-wave/" + self.NASTY
         self.assertEqual(
             self.commands,
@@ -340,7 +340,7 @@ class SshQuotingTests(unittest.TestCase):
                          ["docker", "exec", "sub-wave-controller", "cat", expected])
 
     def test_a_write_passes_the_path_as_a_positional_argument(self):
-        subwave.SshStateSource(self.config).write_bytes(self.NASTY, b"payload")
+        runsheet.SshStateSource(self.config).write_bytes(self.NASTY, b"payload")
         path = "/var/sub-wave/" + self.NASTY
         parent = path.rsplit("/", 1)[0]
         self.assertEqual(self.commands[0],
@@ -352,7 +352,7 @@ class SshQuotingTests(unittest.TestCase):
         self.assertEqual(shlex.split(self.commands[1])[-1], path)
 
     def test_a_remove_and_a_listing_quote_the_path(self):
-        source = subwave.SshStateSource(self.config)
+        source = runsheet.SshStateSource(self.config)
         source.remove(self.NASTY)
         source.list_files()
         self.assertEqual(self.commands[0],
@@ -382,13 +382,13 @@ class EnvExampleTests(unittest.TestCase):
         }
 
     def test_every_config_key_is_documented(self):
-        missing = set(subwave.Config.KEYS) - self.documented()
+        missing = set(runsheet.Config.KEYS) - self.documented()
         self.assertEqual(missing, set(),
                          "Config.KEYS read but not documented in .env.example: %s"
                          % ", ".join(sorted(missing)))
 
     def test_no_documented_key_is_unknown(self):
-        unknown = self.documented() - set(subwave.Config.KEYS)
+        unknown = self.documented() - set(runsheet.Config.KEYS)
         self.assertEqual(unknown, set(),
                          ".env.example documents keys the loader never reads: %s"
                          % ", ".join(sorted(unknown)))
@@ -404,22 +404,22 @@ class StatusBackupTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self._saved = (subwave.INSTANCE_DIR, subwave.detect_tier, subwave.read_state_file)
-        subwave.INSTANCE_DIR = self.tmp / "instance"
-        subwave.read_state_file = lambda config, name: json.dumps(
+        self._saved = (runsheet.INSTANCE_DIR, runsheet.detect_tier, runsheet.read_state_file)
+        runsheet.INSTANCE_DIR = self.tmp / "instance"
+        runsheet.read_state_file = lambda config, name: json.dumps(
             {"personas": [], "station": "Mock FM"} if name == "settings.json"
             else {"shows": [], "schedule": {}})
         self.addCleanup(self._restore)
 
     def _restore(self):
-        (subwave.INSTANCE_DIR, subwave.detect_tier, subwave.read_state_file) = self._saved
+        (runsheet.INSTANCE_DIR, runsheet.detect_tier, runsheet.read_state_file) = self._saved
 
     def run_status(self, tier, **environ):
-        subwave.detect_tier = lambda config, probe=None: (tier, "test")
-        config = subwave.Config(dotenv={}, environ=environ)
+        runsheet.detect_tier = lambda config, probe=None: (tier, "test")
+        config = runsheet.Config(dotenv={}, environ=environ)
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            subwave.cmd_status(config, SimpleNamespace())
+            runsheet.cmd_status(config, SimpleNamespace())
         return buffer.getvalue()
 
     def backup_line(self, output):

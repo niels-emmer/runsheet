@@ -17,9 +17,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_character import CharacterTestCase
-from test_subwave import load_tool
+from test_runsheet import load_tool
 
-subwave = load_tool()
+runsheet = load_tool()
 
 
 class EditTestCase(CharacterTestCase):
@@ -134,8 +134,8 @@ class ShowEditTests(EditTestCase):
 
 class TypeTests(EditTestCase):
     def test_every_editable_field_has_a_type(self):
-        self.assertEqual(set(subwave.PERSONA_TYPES), set(subwave.PERSONA_FIELDS) - {"id"})
-        self.assertEqual(set(subwave.SHOW_TYPES), set(subwave.SHOW_FIELDS) - {"id"})
+        self.assertEqual(set(runsheet.PERSONA_TYPES), set(runsheet.PERSONA_FIELDS) - {"id"})
+        self.assertEqual(set(runsheet.SHOW_TYPES), set(runsheet.SHOW_FIELDS) - {"id"})
 
     def test_integer_fields_reject_non_integers(self):
         for bad in ("warm", "6.5", ""):
@@ -173,14 +173,14 @@ class TypeTests(EditTestCase):
     def test_the_ladder_order_is_preserved(self):
         # Sourced from upstream controller/src/schemas/persona.ts and show.ts.
         # Order matters: settings/persona.ts bumps one rung with indexOf().
-        self.assertEqual(subwave.PERSONA_ENUMS["frequency"],
+        self.assertEqual(runsheet.PERSONA_ENUMS["frequency"],
                          ("silent", "quiet", "moderate", "chatty", "aggressive"))
-        self.assertEqual(subwave.PERSONA_ENUMS["scriptLength"],
+        self.assertEqual(runsheet.PERSONA_ENUMS["scriptLength"],
                          ("one-liner", "concise", "extended", "storyteller"))
-        self.assertEqual(subwave.PERSONA_ENUMS["linkStyle"], ("natural", "announce"))
-        self.assertEqual(subwave.SHOW_ENUMS["energies"], ("low", "medium", "high"))
-        self.assertEqual(subwave.SHOW_ENUMS["vocals"], ("", "instrumental", "vocal"))
-        self.assertNotIn("moods", subwave.SHOW_ENUMS,
+        self.assertEqual(runsheet.PERSONA_ENUMS["linkStyle"], ("natural", "announce"))
+        self.assertEqual(runsheet.SHOW_ENUMS["energies"], ("low", "medium", "high"))
+        self.assertEqual(runsheet.SHOW_ENUMS["vocals"], ("", "instrumental", "vocal"))
+        self.assertNotIn("moods", runsheet.SHOW_ENUMS,
                          "moods is station-supplied, not a fixed enum")
 
     def test_moods_are_free_form_because_the_station_supplies_them(self):

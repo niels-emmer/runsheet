@@ -1,6 +1,6 @@
 # Security
 
-`subwave-marvin` is a toolkit for operating a live **SUB/WAVE** radio station from an agent
+`runsheet` is a toolkit for operating a live **SUB/WAVE** radio station from an agent
 session. It is not a service: it is a Python script you run yourself, with your credentials,
 against your own station. That shape is the whole threat model — the tool is exactly as
 trusted as the person running it, and it holds the keys to a station that is on air.
@@ -8,7 +8,7 @@ trusted as the person running it, and it holds the keys to a station that is on 
 ## Reporting a vulnerability
 
 Please **do not open a public issue** for a security problem. Report it privately via
-[GitHub private vulnerability reporting](https://github.com/niels-emmer/subwave-marvin/security/advisories/new).
+[GitHub private vulnerability reporting](https://github.com/niels-emmer/runsheet/security/advisories/new).
 You will get an acknowledgement within a few days, and a fix is published as a release once
 ready.
 

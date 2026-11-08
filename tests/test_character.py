@@ -15,9 +15,9 @@ import unittest
 from pathlib import Path
 
 import mock_station
-from test_subwave import load_tool
+from test_runsheet import load_tool
 
-subwave = load_tool()
+runsheet = load_tool()
 
 
 class CharacterTestCase(unittest.TestCase):
@@ -25,9 +25,9 @@ class CharacterTestCase(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
-        self._saved_instance = subwave.INSTANCE_DIR
-        subwave.INSTANCE_DIR = self.tmp / "instance"
-        self.addCleanup(lambda: setattr(subwave, "INSTANCE_DIR", self._saved_instance))
+        self._saved_instance = runsheet.INSTANCE_DIR
+        runsheet.INSTANCE_DIR = self.tmp / "instance"
+        self.addCleanup(lambda: setattr(runsheet, "INSTANCE_DIR", self._saved_instance))
 
         self.server = mock_station.start_mock()
         self.addCleanup(self.server.stop)
@@ -51,7 +51,7 @@ class CharacterTestCase(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                code = subwave.main(list(args))
+                code = runsheet.main(list(args))
             except SystemExit as exc:  # argparse errors
                 code = exc.code
         return code, out.getvalue() + err.getvalue()
@@ -60,7 +60,7 @@ class CharacterTestCase(unittest.TestCase):
         return self.run_cli("validate")
 
     def root(self):
-        return subwave.INSTANCE_DIR
+        return runsheet.INSTANCE_DIR
 
     def assert_valid(self):
         code, output = self.validate()
@@ -136,7 +136,7 @@ class PersonaScaffoldTests(CharacterTestCase):
         self.assertEqual(code, 0, output)
         persona = json.loads((self.root() / "character" / "personas" / "dora-quint.json").read_text())
         self.assertEqual(persona["id"], "p_local_dora_quint")
-        self.assertRegex(persona["id"], subwave.ID_RE)
+        self.assertRegex(persona["id"], runsheet.ID_RE)
         self.assertNotIn("-", persona["id"])
 
     def test_new_persona_refuses_a_duplicate_slug(self):
@@ -180,7 +180,7 @@ class ShowScaffoldTests(CharacterTestCase):
         self.assertEqual(code, 0, output)
         show = json.loads((self.root() / "character" / "shows" / "late-harbour-two.json").read_text())
         self.assertEqual(show["id"], "s_local_late_harbour_two")
-        self.assertRegex(show["id"], subwave.ID_RE)
+        self.assertRegex(show["id"], runsheet.ID_RE)
 
     def test_new_show_needs_a_persona_when_several_exist(self):
         code, output = self.run_cli("character", "new-show", "no-host")

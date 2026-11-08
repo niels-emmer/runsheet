@@ -29,14 +29,14 @@ backup and cannot restore the station. **Refuse rather than pretend**, and say e
 
 ## Done when
 
-- `python3 scripts/subwave.py backup` has printed a path outside the repo.
+- `python3 scripts/runsheet.py backup` has printed a path outside the repo.
 - That path holds both `settings.json` and `schedule.json`, both parse, the grid has 7 days and 168
   cells, and every non-empty cell names a show that exists in the file.
 - The human has the path, the counts, and a warning that the files are unredacted.
 
 ## Preconditions
 
-1. **Tier 2.** `python3 scripts/subwave.py status` must print tier 2 (HTTP + host access). If it
+1. **Tier 2.** `python3 scripts/runsheet.py status` must print tier 2 (HTTP + host access). If it
    prints tier 1, stop and explain the paragraph above — do not substitute the API zip, and do not
    pull with `--allow-lossy` and call the result a backup.
 2. `SUBWAVE_HOST` and `SUBWAVE_STATE_DIR` are set — the state dir is the path **inside the
@@ -48,13 +48,13 @@ backup and cannot restore the station. **Refuse rather than pretend**, and say e
 ## Procedure
 
 ```sh
-python3 scripts/subwave.py status
+python3 scripts/runsheet.py status
 ```
 
 Record the tier and station name. Then:
 
 ```sh
-python3 scripts/subwave.py backup
+python3 scripts/runsheet.py backup
 ```
 
 The output names the destination. The layout is
@@ -62,7 +62,7 @@ The output names the destination. The layout is
 `~/.subwave-backups`. To choose a location:
 
 ```sh
-python3 scripts/subwave.py backup --dir "$HOME/subwave-backups"
+python3 scripts/runsheet.py backup --dir "$HOME/subwave-backups"
 ```
 
 `--dir` is a **base** directory, not the final folder; the command creates the station and timestamp

@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "subwave.py"
+SCRIPT = ROOT / "scripts" / "runsheet.py"
 
 COMMANDS = ("status", "pull", "diff", "character", "validate", "apply", "restore",
             "backup", "blocklist")
@@ -35,10 +35,10 @@ class RootParserTests(unittest.TestCase):
 
     def test_the_root_parser_is_actually_the_root(self):
         # The regression: build_parser returned a leaf, so --help printed
-        # "usage: subwave.py blocklist rule edit ..." instead of the program.
+        # "usage: runsheet.py blocklist rule edit ..." instead of the program.
         # argparse wraps the usage line, so take the whole block up to the blank line.
         usage = run("--help").stdout.split("\n\n")[0]
-        self.assertTrue(usage.startswith("usage: subwave.py"),
+        self.assertTrue(usage.startswith("usage: runsheet.py"),
                         "unexpected usage line: %r" % usage)
         for command in COMMANDS:
             self.assertIn(command, usage,

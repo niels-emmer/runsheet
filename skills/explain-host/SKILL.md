@@ -28,7 +28,7 @@ workflow takes over.
 
 ## Preconditions
 
-1. `python3 scripts/subwave.py status` — announce tier, what is on air, and whether the repo has
+1. `python3 scripts/runsheet.py status` — announce tier, what is on air, and whether the repo has
    drifted. If `diff` is dirty, the dials you are about to read are not what is playing: pull first
    (tier 2) or say that the diagnosis is against the repo, not the station.
 2. A full-fidelity `instance/`. At tier 1 `/api/schedule` trims shows to 7 of 26 fields and there is
@@ -155,8 +155,8 @@ this skill never writes, so nothing here can change what is on air.
 
 ## Verify (after someone applies it)
 
-1. `python3 scripts/subwave.py diff` — clean, so the change is live and not just in the repo.
-2. `python3 scripts/subwave.py status` — the same show is on air, the persona unchanged elsewhere.
+1. `python3 scripts/runsheet.py diff` — clean, so the change is live and not just in the repo.
+2. `python3 scripts/runsheet.py status` — the same show is on air, the persona unchanged elsewhere.
 3. Listen across two or three track boundaries in the affected show, and one boundary in an
    unaffected show hosted by the same persona, to confirm the change is scoped as claimed.
 4. If `frequency` changed, check a show the persona hosts **outside** the reported one: the change

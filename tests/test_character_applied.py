@@ -18,9 +18,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import mock_station
-from test_subwave import load_tool
+from test_runsheet import load_tool
 
-subwave = load_tool()
+runsheet = load_tool()
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "station.json"
 
 
@@ -41,23 +41,23 @@ class CharacterAppliedTests(unittest.TestCase):
             "SUBWAVE_ADMIN_PASS": "mock-pass",
         })
 
-        self._saved = (subwave.INSTANCE_DIR, subwave.SshStateSource,
-                       subwave.read_state_file, subwave.detect_tier,
-                       subwave.builtin_skill_slugs)
-        subwave.INSTANCE_DIR = self.tmp / "instance"
-        subwave.SshStateSource = lambda config: subwave.LocalStateSource(
+        self._saved = (runsheet.INSTANCE_DIR, runsheet.SshStateSource,
+                       runsheet.read_state_file, runsheet.detect_tier,
+                       runsheet.builtin_skill_slugs)
+        runsheet.INSTANCE_DIR = self.tmp / "instance"
+        runsheet.SshStateSource = lambda config: runsheet.LocalStateSource(
             self.server.state_dir)
         # The mock keeps the station in memory; its state dir is only the seed.
-        subwave.read_state_file = lambda config, name: json.dumps(
+        runsheet.read_state_file = lambda config, name: json.dumps(
             self.server.station.settings if name == "settings.json"
             else self.server.station.schedule)
-        subwave.detect_tier = lambda config, probe=None: (2, "mock")
-        subwave.builtin_skill_slugs = lambda config, state: {"curiosity"}
+        runsheet.detect_tier = lambda config, probe=None: (2, "mock")
+        runsheet.builtin_skill_slugs = lambda config, state: {"curiosity"}
         self.addCleanup(self._restore)
 
         document = json.loads(FIXTURE.read_text(encoding="utf-8"))
-        model = subwave.build_live_model(document["settings"], document["schedule"])
-        subwave.write_instance(model, {}, capture={
+        model = runsheet.build_live_model(document["settings"], document["schedule"])
+        runsheet.write_instance(model, {}, capture={
             "tier": 2, "at": "2026-10-31T00:00:00Z", "lossy": False, "lost": []})
 
     def _restore_environ(self):
@@ -65,22 +65,22 @@ class CharacterAppliedTests(unittest.TestCase):
         os.environ.update(self._saved_environ)
 
     def _restore(self):
-        (subwave.INSTANCE_DIR, subwave.SshStateSource,
-         subwave.read_state_file, subwave.detect_tier,
-         subwave.builtin_skill_slugs) = self._saved
+        (runsheet.INSTANCE_DIR, runsheet.SshStateSource,
+         runsheet.read_state_file, runsheet.detect_tier,
+         runsheet.builtin_skill_slugs) = self._saved
 
     # -- helpers -----------------------------------------------------------
     def run_cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                code = subwave.main(list(args))
+                code = runsheet.main(list(args))
             except SystemExit as exc:
                 code = exc.code
         return code, out.getvalue() + err.getvalue()
 
     def character_path(self):
-        return subwave.INSTANCE_DIR / "character" / "character.json"
+        return runsheet.INSTANCE_DIR / "character" / "character.json"
 
     def edit_character(self, **fields):
         document = json.loads(self.character_path().read_text())
@@ -125,8 +125,8 @@ class HouseRulesTests(CharacterAppliedTests):
 class IdentityTests(CharacterAppliedTests):
     def test_pull_removes_identity_from_settings_json(self):
         self.assertEqual(self.run_cli("pull", "--force")[0], 0)
-        settings = json.loads((subwave.INSTANCE_DIR / "settings.json").read_text())
-        for key in subwave.IDENTITY_KEYS:
+        settings = json.loads((runsheet.INSTANCE_DIR / "settings.json").read_text())
+        for key in runsheet.IDENTITY_KEYS:
             self.assertNotIn(key, settings,
                              "%s must live in character.json only" % key)
         character = json.loads(self.character_path().read_text())
@@ -151,7 +151,7 @@ class PostApplyCheckTests(CharacterAppliedTests):
 
         # A station that accepts the write and silently keeps the old value: the
         # exact failure mode this check exists for.
-        original = subwave.read_state_file
+        original = runsheet.read_state_file
 
         def stale(config, name):
             if name == "settings.json":
@@ -160,7 +160,7 @@ class PostApplyCheckTests(CharacterAppliedTests):
                 return json.dumps(settings)
             return original(config, name)
 
-        subwave.read_state_file = stale
+        runsheet.read_state_file = stale
         code, output = self.apply()
         self.assertNotEqual(code, 0, "a silent no-op must not exit 0")
         self.assertIn("did NOT land", output)
@@ -180,7 +180,7 @@ class PostApplyCheckTests(CharacterAppliedTests):
         circuit with "no changes" and exit 0, leaving the station wrong.
         """
         self.edit_character(name="Harbour After Dark")
-        original = subwave.read_state_file
+        original = runsheet.read_state_file
 
         def stale(config, name):
             if name == "settings.json":
@@ -189,8 +189,8 @@ class PostApplyCheckTests(CharacterAppliedTests):
                 return json.dumps(settings)
             return original(config, name)
 
-        subwave.read_state_file = stale
-        self.addCleanup(lambda: setattr(subwave, "read_state_file", original))
+        runsheet.read_state_file = stale
+        self.addCleanup(lambda: setattr(runsheet, "read_state_file", original))
 
         code, output = self.apply()
         self.assertNotEqual(code, 0)
@@ -224,14 +224,14 @@ class SecretVerificationTests(CharacterAppliedTests):
                 node = node.setdefault(part, {})
             node[parts[-1]] = value
 
-        path = subwave.INSTANCE_DIR / "settings.json"
+        path = runsheet.INSTANCE_DIR / "settings.json"
         document = json.loads(path.read_text())
         for dotted in self.SECRETS:
             parts = dotted.split(".")
             node = document
             for part in parts[:-1]:
                 node = node.setdefault(part, {})
-            node[parts[-1]] = subwave.SENTINEL
+            node[parts[-1]] = runsheet.SENTINEL
         path.write_text(json.dumps(document, indent=2))
 
     def test_apply_with_secrets_succeeds_and_records_applied(self):
@@ -240,7 +240,7 @@ class SecretVerificationTests(CharacterAppliedTests):
         self.assertEqual(code, 0, output)
         self.assertNotIn("did NOT land", output)
 
-        lock = json.loads((subwave.INSTANCE_DIR / "ids.lock.json").read_text())
+        lock = json.loads((runsheet.INSTANCE_DIR / "ids.lock.json").read_text())
         self.assertIn("applied", lock, "a successful write must be recorded")
 
     def test_stdout_never_contains_a_secret(self):
@@ -255,14 +255,14 @@ class SecretVerificationTests(CharacterAppliedTests):
         # The station keeps its own password while we send a different one: the
         # env value wins during rehydration, so the two genuinely disagree.
         frozen = json.loads(json.dumps(self.server.station.settings))
-        original = subwave.read_state_file
+        original = runsheet.read_state_file
 
         def stale(config, name):
             if name == "settings.json":
                 return json.dumps(frozen)
             return original(config, name)
 
-        subwave.read_state_file = stale
+        runsheet.read_state_file = stale
         os.environ["SUBWAVE_STATION_PASSWORD"] = "a-different-password-UNIQUE-MARKER"
         self.addCleanup(lambda: os.environ.pop("SUBWAVE_STATION_PASSWORD", None))
 
@@ -275,7 +275,7 @@ class SecretVerificationTests(CharacterAppliedTests):
         self.assertNotIn("a-different-password-UNIQUE-MARKER", output)
 
     def test_a_non_secret_mismatch_is_still_loud_and_named(self):
-        original = subwave.read_state_file
+        original = runsheet.read_state_file
 
         def stale(config, name):
             if name == "settings.json":
@@ -284,7 +284,7 @@ class SecretVerificationTests(CharacterAppliedTests):
                 return json.dumps(settings)
             return original(config, name)
 
-        subwave.read_state_file = stale
+        runsheet.read_state_file = stale
         code, output = self.apply()
         self.assertNotEqual(code, 0)
         self.assertIn("did NOT land", output)
@@ -305,9 +305,9 @@ class RoundTripTests(CharacterAppliedTests):
     def test_festival_normalisation_does_not_churn(self):
         # The station stores every festival with description and windowDays;
         # sending the short form made diff-after-apply dirty.
-        settings = json.loads((subwave.INSTANCE_DIR / "settings.json").read_text())
+        settings = json.loads((runsheet.INSTANCE_DIR / "settings.json").read_text())
         settings["festivals"] = [{"month": 1, "day": 1, "name": "New Year", "mood": "celebratory"}]
-        (subwave.INSTANCE_DIR / "settings.json").write_text(json.dumps(settings, indent=2))
+        (runsheet.INSTANCE_DIR / "settings.json").write_text(json.dumps(settings, indent=2))
 
         self.assertEqual(self.apply()[0], 0)
         stored = self.station_settings()["festivals"][0]
@@ -322,10 +322,10 @@ class RoundTripTests(CharacterAppliedTests):
     def test_a_festival_key_this_tool_does_not_model_survives_apply(self):
         # The station may know more fields than this copy of the toolkit. A
         # rebuild to exactly six keys deleted them on the next apply.
-        settings = json.loads((subwave.INSTANCE_DIR / "settings.json").read_text())
+        settings = json.loads((runsheet.INSTANCE_DIR / "settings.json").read_text())
         settings["festivals"] = [{"month": 6, "day": 21, "name": "Midsummer",
                                   "mood": "warm", "art": "sun-wheel"}]
-        (subwave.INSTANCE_DIR / "settings.json").write_text(json.dumps(settings, indent=2))
+        (runsheet.INSTANCE_DIR / "settings.json").write_text(json.dumps(settings, indent=2))
 
         code, output = self.apply()
         self.assertEqual(code, 0, output)
