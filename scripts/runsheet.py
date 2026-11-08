@@ -11,6 +11,8 @@ Every command prints the tier it is running at. Writes are explicit and dry firs
 Configuration comes from the environment, with a repo-root .env as a fallback:
   SUBWAVE_BASE_URL, SUBWAVE_ADMIN_USER, SUBWAVE_ADMIN_PASS,
   SUBWAVE_STATION_PASSWORD, SUBWAVE_HOST, SUBWAVE_STATE_DIR, SUBWAVE_CONTAINER
+Setting RUNSHEET_ENV_FILE in the real environment names a credentials file to
+read instead of ./.env, so many checkouts can share one file.
 """
 
 import argparse
@@ -35,6 +37,8 @@ INSTANCE_DIR = REPO_ROOT / "instance"
 DEFAULT_CONTAINER = "sub-wave-controller"
 DEFAULT_TIMEOUT = 20
 SENTINEL = "__REDACTED__"
+# Names a credentials file outside the checkout; see resolve_dotenv().
+ENV_FILE_VAR = "RUNSHEET_ENV_FILE"
 
 # The station's own id contract (controller/src/routes/public.ts mirrors
 # settings.ID_RE): lowercase alphanumerics and underscores, 3-32 chars. No
@@ -107,6 +111,29 @@ def load_dotenv(path):
     return values
 
 
+def resolve_dotenv(environ=None):
+    """Pick the credentials file for this process, or {} when there is none.
+
+    Precedence, highest first: the real environment, then the file named by
+    RUNSHEET_ENV_FILE, then the repo's .env. The named file REPLACES .env
+    rather than merging with it: one shared credentials file must be the only
+    source, so a stale checkout-local .env cannot quietly supply another
+    station's password. A path that is set but missing is an error, not a
+    silent fallback.
+    """
+    environ = os.environ if environ is None else environ
+    named = (environ.get(ENV_FILE_VAR) or "").strip()
+    if not named:
+        return load_dotenv(REPO_ROOT / ".env")
+    path = Path(named).expanduser()
+    if not path.is_file():
+        raise ConfigError(
+            "%s is set to %r, which is not a file. Fix the path, or unset it to "
+            "fall back to .env." % (ENV_FILE_VAR, named)
+        )
+    return load_dotenv(path)
+
+
 class Config:
     """Environment plus .env fallback. Real environment variables always win."""
 
@@ -121,8 +148,8 @@ class Config:
     )
 
     def __init__(self, dotenv=None, environ=None):
-        dotenv = dotenv if dotenv is not None else load_dotenv(REPO_ROOT / ".env")
         environ = environ if environ is not None else os.environ
+        dotenv = dotenv if dotenv is not None else resolve_dotenv(environ)
         self.values = {}
         for key in self.KEYS:
             value = environ.get(key)
@@ -4916,7 +4943,8 @@ def main(argv=None):
         print("mock      %s (in-process tests/mock_station.py; no network, no host)"
               % mock.server.url, flush=True)
     try:
-        return args.func(mock.config if mock else Config(), args)
+        config = mock.config if mock else Config()
+        return args.func(config, args)
     except ConfigError as exc:
         print("runsheet: %s" % exc, file=sys.stderr)
         return EXIT_CONFIG
