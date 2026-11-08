@@ -22,12 +22,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import mock_station
+from test_smoke import fresh_clone
 from test_runsheet import load_tool
 
 runsheet = load_tool()
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "station.json"
-SCRIPT = ROOT / "scripts" / "runsheet.py"
 
 READ_ONLY_NAMES = ["runsheet_status", "runsheet_diff", "runsheet_validate"]
 WRITER_WORDS = ("apply", "character", "blocklist", "skills", "backup", "restore",
@@ -50,6 +50,15 @@ class McpServerTestCase(unittest.TestCase):
             "SUBWAVE_ADMIN_USER": "mock-admin",
             "SUBWAVE_ADMIN_PASS": "mock-pass",
         })
+
+        # Config() falls back to REPO_ROOT/.env for anything missing from the
+        # environment. In an operator checkout that file names a live host, so
+        # these tests would ssh to it (and could inherit SSH_AUTH_SOCK). Force
+        # the environment built above to be the only source: the suite stays
+        # offline, as AGENTS.md promises.
+        self._saved_config = runsheet.Config
+        runsheet.Config = lambda *args, **kwargs: self._saved_config(dotenv={})
+        self.addCleanup(lambda: setattr(runsheet, "Config", self._saved_config))
 
         self._saved_instance = runsheet.INSTANCE_DIR
         runsheet.INSTANCE_DIR = self.tmp / "instance"
@@ -167,6 +176,26 @@ class ToolCallTests(McpServerTestCase):
         self.assertEqual([tool["name"] for tool in self.rpc("tools/list", identifier=2)
                           ["result"]["tools"]], READ_ONLY_NAMES)
 
+    def test_a_bad_argument_is_invalid_params(self):
+        response = self.call_tool("runsheet_validate", {"dir": 5})
+        self.assertEqual(response["error"]["code"], -32602)
+        self.assertIn("dir", response["error"]["message"])
+
+    def test_a_command_failure_is_a_tool_result_not_a_protocol_error(self):
+        # json.JSONDecodeError is a ValueError; it must not be answered with
+        # -32602 ("your arguments were wrong") for a file that is corrupt.
+        victim = sorted((runsheet.INSTANCE_DIR / "character" / "personas")
+                        .glob("*.json"))[0]
+        victim.write_text("{not json", encoding="utf-8")
+
+        response = self.call_tool("runsheet_diff")
+
+        self.assertNotIn("error", response)
+        self.assertIs(response["result"]["isError"], True)
+        self.assertIn("runsheet:", self.text(response))
+        # The tier line printed before the failure is kept for the client.
+        self.assertIn("tier      1", self.text(response))
+
     def test_the_three_tools_never_write_to_the_station(self):
         for name in READ_ONLY_NAMES:
             with self.subTest(tool=name):
@@ -226,7 +255,16 @@ class ProtocolStdinTests(McpServerTestCase):
 class StdioTransportTests(unittest.TestCase):
     """Run the real entry point: `runsheet.py mcp-server` over stdin/stdout."""
 
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        # A copy of exactly the tracked files, as test_smoke does: no instance/
+        # and - critically - no .env, which the server would otherwise read from
+        # the real repo root and use to probe a live host over ssh.
+        fresh_clone(self.tmp)
+
     def test_stdio_session_speaks_only_json_on_stdout(self):
+        demo = str(self.tmp / "examples" / "demo")
         messages = [
             {"jsonrpc": "2.0", "id": 1, "method": "initialize",
              "params": {"protocolVersion": "2025-06-18", "capabilities": {},
@@ -234,15 +272,14 @@ class StdioTransportTests(unittest.TestCase):
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
             {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-             "params": {"name": "runsheet_validate",
-                        "arguments": {"dir": "examples/demo"}}},
+             "params": {"name": "runsheet_validate", "arguments": {"dir": demo}}},
             {"jsonrpc": "2.0", "id": 4, "method": "ping"},
         ]
         stdin = "".join(json.dumps(message) + "\n" for message in messages)
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "mcp-server"],
-            input=stdin, cwd=ROOT, capture_output=True, text=True, timeout=60,
-            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(ROOT)})
+            [sys.executable, str(self.tmp / "scripts" / "runsheet.py"), "mcp-server"],
+            input=stdin, cwd=self.tmp, capture_output=True, text=True, timeout=120,
+            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.tmp)})
 
         self.assertEqual(result.returncode, 0, result.stderr)
         # stdout is the protocol channel: every line must be one JSON response,
