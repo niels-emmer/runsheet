@@ -131,26 +131,29 @@ That second path is the only one that skips the review, and it never touches you
 ```sh
 git clone https://github.com/niels-emmer/runsheet.git
 cd runsheet
-python3 scripts/runsheet.py init --host you@your-server
+python3 scripts/runsheet.py init --host you@your-server \
+    --base-url http://127.0.0.1:7700 --admin-user admin --admin-pass 'your-admin-password'
 ```
 
 `init` does the setup in one step. Given an ssh address it runs the same read-only discovery
-`status` does, finds the controller container and its data directory, writes `SUBWAVE_HOST`,
-`SUBWAVE_CONTAINER` and `SUBWAVE_STATE_DIR` into `.env`, then prints the tier-2 confirmation so you
-can see it worked. There is no `.env` yet, so it starts from `.env.example` for you.
+`status` does, finds the controller container and its data directory, and writes `SUBWAVE_HOST`,
+`SUBWAVE_CONTAINER` and `SUBWAVE_STATE_DIR` into `.env`; the HTTP flags write the station's address
+and admin credentials in the same pass. Host access is HTTP **plus** ssh, so keep `--base-url` and
+the admin pair even when you pass `--host`. `--station-password` is there too if your listeners need
+one. There is no `.env` yet, so `init` starts from `.env.example` for you.
 
-With only the station's web address, pass the HTTP-only settings instead:
+Without ssh, pass just the HTTP settings for the lighter tier:
 
 ```sh
 python3 scripts/runsheet.py init --base-url http://127.0.0.1:7700 \
     --admin-user admin --admin-pass 'your-admin-password'
 ```
 
-`--station-password` is there too if your listeners need one. Either form writes `.env` in one go.
-If `.env` already holds a station, `init` prints what it would write and refuses until you add
-`--force`, and it masks passwords in what it prints. The manual route still works if you prefer it:
-`cp .env.example .env`, fill it in, and run `status` — it still prints the two host-access lines to
-paste back.
+Either form writes `.env` in one go. If `.env` already holds a station, `init` prints what it would
+write and refuses until you add `--force`, and it masks passwords in what it prints. Anything still
+missing afterwards is named in a `next` line, including a missing `SUBWAVE_BASE_URL` or admin pair.
+The manual route still works if you prefer it: `cp .env.example .env`, fill it in, and run `status` —
+it still prints the two host-access lines to paste back.
 
 Then open your agent in that directory — Claude Code, Codex, OpenCode, or anything else that reads
 `AGENTS.md` — and ask for the station's status. Nothing to install: the tool is one Python file with no
@@ -218,9 +221,10 @@ Two ways to reach a station. The second is worth having.
 | `onair` | live control | `onair say "Back after this." --yes` |
 | `--mock` | run any station command against the in-process mock station: no network, no ssh, no live config | `apply --yes --mock` |
 
-Flags live here rather than in the body: `init` takes `--host` for tier 2, or `--base-url`,
-`--admin-user`, `--admin-pass` and `--station-password` for tier 1, plus `--force` to update a
-populated `.env`. `apply` also takes `--force-now` (write while on air), `--no-backup`,
+Flags live here rather than in the body: `init` takes `--host` for host access, plus `--base-url`,
+`--admin-user`, `--admin-pass` and `--station-password` for the station's HTTP side (the HTTP flags
+work with or without `--host`), and `--force` to update a populated `.env`. `apply` also takes
+`--force-now` (write while on air), `--no-backup`,
 `--backup-dir`, and `--prune` / `--force-prune` for things on the station but not in your files. `pull` takes
 `--allow-lossy` for a partial copy. `--mock` works with every command that talks to a station and swaps the
 station for the repository's own mock (`tests/mock_station.py`), started in-process on loopback as a tier-2

@@ -1232,12 +1232,19 @@ def _update_env_text(text, values):
 def _init_values(config, args):
     """Work out what init should write. Returns {KEY: value}."""
     values = {}
-    tier1 = (
-        (args.base_url, "SUBWAVE_BASE_URL"),
-        (args.admin_user, "SUBWAVE_ADMIN_USER"),
-        (args.admin_pass, "SUBWAVE_ADMIN_PASS"),
-        (args.station_password, "SUBWAVE_STATION_PASSWORD"),
-    )
+    # Tier 2 is HTTP *plus* host access, so --base-url is validated once here,
+    # whichever branch writes it. The normalised value is what gets stored.
+    base_url = args.base_url or config.base_url
+    if base_url:
+        if not base_url.startswith(("http://", "https://")):
+            raise ConfigError(
+                "--base-url must start with http:// or https:// (got %r)" % base_url)
+        base_url = base_url.rstrip("/")
+    if not args.host and not base_url:
+        raise ConfigError(
+            "init needs a station: pass --host <ssh-address> for host access (plus --base-url "
+            "and the admin credentials), or just the HTTP settings for the HTTP-only tier.")
+
     if args.host:
         probe = Config(dotenv={}, environ={"SUBWAVE_HOST": args.host})
         try:
@@ -1258,17 +1265,13 @@ def _init_values(config, args):
             others = ", ".join("%s:%s" % pair for pair in found[1:])
             print("          other candidates: %s" % others)
     else:
-        base_url = args.base_url or config.base_url
-        if not base_url:
-            raise ConfigError(
-                "init needs a station: pass --host <ssh-address> for full host access, or "
-                "--base-url <url> for the HTTP-only tier.")
-        if not base_url.startswith(("http://", "https://")):
-            raise ConfigError(
-                "--base-url must start with http:// or https:// (got %r)" % base_url)
-        values["SUBWAVE_BASE_URL"] = base_url.rstrip("/")
         print("tier 1    no host given: writing the HTTP-only settings")
-    for flag, key in tier1:
+
+    if base_url:
+        values["SUBWAVE_BASE_URL"] = base_url
+    for flag, key in ((args.admin_user, "SUBWAVE_ADMIN_USER"),
+                      (args.admin_pass, "SUBWAVE_ADMIN_PASS"),
+                      (args.station_password, "SUBWAVE_STATION_PASSWORD")):
         if flag:
             values[key] = flag
     return values
@@ -1320,8 +1323,16 @@ def cmd_init(config, args):
     print("why       %s" % detail)
     if written.base_url:
         print("endpoint  %s" % written.base_url)
+    hints = []
+    if not written.base_url:
+        hints.append("SUBWAVE_BASE_URL is not set: pass --base-url so HTTP commands can reach it")
+    if not (written.admin_user and written.admin_pass):
+        hints.append("SUBWAVE_ADMIN_USER and SUBWAVE_ADMIN_PASS are not both set: pass them so "
+                     "apply and onair can authenticate")
     if tier == 1:
-        print("next      set SUBWAVE_HOST and re-run init for full reads, or run status")
+        hints.append("set SUBWAVE_HOST and re-run init for full reads, or run status")
+    for index, hint in enumerate(hints):
+        print("%-10s%s" % ("next" if index == 0 else "", hint))
     return EXIT_OK
 
 
@@ -4871,10 +4882,10 @@ def build_parser():
     init = sub.add_parser(
         "init", help="write .env in one step: discover host access, or record HTTP-only settings")
     init.add_argument("--host", help="ssh address; discovers the controller container and state dir")
-    init.add_argument("--base-url", help="station admin API URL (tier 1)")
-    init.add_argument("--admin-user", help="admin HTTP Basic user (tier 1)")
-    init.add_argument("--admin-pass", help="admin HTTP Basic password (tier 1)")
-    init.add_argument("--station-password", help="listener station password (tier 1)")
+    init.add_argument("--base-url", help="station admin API URL; needed at either tier")
+    init.add_argument("--admin-user", help="admin HTTP Basic user")
+    init.add_argument("--admin-pass", help="admin HTTP Basic password")
+    init.add_argument("--station-password", help="listener station password")
     init.add_argument("--force", action="store_true", help="update an existing populated .env")
     init.set_defaults(func=cmd_init)
 

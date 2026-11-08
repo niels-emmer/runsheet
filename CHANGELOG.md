@@ -35,10 +35,11 @@ All notable changes to this project are documented here. The format is based on
 - **`init` sets up `.env` in one step.** `init --host <ssh-address>` runs the same host discovery
   `status` does, then writes `SUBWAVE_HOST`, `SUBWAVE_CONTAINER` and `SUBWAVE_STATE_DIR` straight
   into the credentials file the tool reads — `RUNSHEET_ENV_FILE` when set, otherwise a repo-root
-  `.env` created from `.env.example` when absent — and prints the tier-2 confirmation. `init
-  --base-url <url> [--admin-user … --admin-pass … --station-password …]` does the same for the
-  HTTP-only tier. It refuses to overwrite a populated file without `--force`, printing what it
-  would write (secrets masked) first, and writes the file owner-only.
+  `.env` created from `.env.example` when absent — and prints the tier-2 confirmation. Add
+  `--base-url` and the admin flags in the same pass to fill the HTTP side: host access is HTTP plus
+  ssh. Without `--host` the same HTTP flags record the lighter tier. It refuses to overwrite a
+  populated file without `--force`, printing what it would write (secrets masked) first, and writes
+  the file owner-only.
 - **Tier 2 is reachable from a bare ssh host.** `status` at tier 1 now probes the host it is given: one
   read-only ssh round trip lists the running containers, inspects their mounts, and reports the first
   mount that already contains a `settings.json`, printing the exact `SUBWAVE_CONTAINER=` and

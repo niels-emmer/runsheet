@@ -104,9 +104,46 @@ class Tier2InitTests(InitTestCase):
         self.assertIn("SUBWAVE_HOST=me@host", output)
         self.assertIn("SUBWAVE_STATE_DIR=/var/sub-wave", output)
         self.assertIn("tier      2 - host access", output)
+        self.assertIn("SUBWAVE_BASE_URL is not set", output,
+                      "tier 2 without the HTTP side must say what is still missing")
         self.assertEqual(len(calls), 2, "one discovery call, then one tier-2 probe")
         self.assertEqual(calls[0][1].host, "me@host")
         self.assertIn("docker ps", calls[0][0])
+
+    def test_host_with_http_flags_writes_all_of_them(self):
+        # Tier 2 is HTTP *plus* host access: --host alone is not a full setup.
+        self.copy_example()
+        self.stub_ssh("FOUND sub-wave-controller /var/sub-wave\n", FakeResult())
+
+        code, output = self.run_cli(
+            "init", "--host", "me@host",
+            "--base-url", "http://127.0.0.1:7700/",
+            "--admin-user", "admin", "--admin-pass", "fake-admin-pass")
+
+        self.assertEqual(code, 0, output)
+        values = self.read_env()
+        self.assertEqual(values["SUBWAVE_HOST"], "me@host")
+        self.assertEqual(values["SUBWAVE_CONTAINER"], "sub-wave-controller")
+        self.assertEqual(values["SUBWAVE_STATE_DIR"], "/var/sub-wave")
+        self.assertEqual(values["SUBWAVE_BASE_URL"], "http://127.0.0.1:7700",
+                         "the normalised URL must be the one written")
+        self.assertEqual(values["SUBWAVE_ADMIN_USER"], "admin")
+        self.assertEqual(values["SUBWAVE_ADMIN_PASS"], "fake-admin-pass")
+        self.assertNotIn("next      SUBWAVE_BASE_URL", output)
+
+    def test_host_with_a_malformed_base_url_is_refused_before_discovery(self):
+        self.copy_example()
+
+        def refuse(*a, **kw):
+            raise AssertionError("a malformed --base-url must be rejected before ssh")
+
+        runsheet.ssh_run = refuse
+        code, output = self.run_cli("init", "--host", "me@host",
+                                    "--base-url", "station.lan:7700")
+
+        self.assertEqual(code, 2)
+        self.assertIn("must start with http:// or https://", output)
+        self.assertFalse(self.env_path().exists())
 
     def test_no_env_yet_starts_from_the_example_so_comments_survive(self):
         self.copy_example()
