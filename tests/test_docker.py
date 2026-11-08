@@ -64,7 +64,8 @@ class ImageTests(unittest.TestCase):
     def test_the_base_image_is_the_supported_python_runtime(self):
         bases = [line for line in instructions(DOCKERFILE) if line.upper().startswith("FROM ")]
         self.assertEqual(len(bases), 1, "expected a single FROM, got %r" % bases)
-        self.assertRegex(bases[0], r"^FROM python:3\.\d+-alpine$")
+        # A digest pin is allowed and encouraged; the tag alone is the floor.
+        self.assertRegex(bases[0], r"^FROM python:3\.\d+-alpine(@sha256:[0-9a-f]{64})?$")
 
     def test_the_build_context_excludes_credentials_and_station_data(self):
         patterns = ignore_patterns(DOCKERIGNORE)

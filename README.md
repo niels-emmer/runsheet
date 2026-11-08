@@ -55,20 +55,26 @@ Six things behave differently inside a container, and each has one fix:
 - **`127.0.0.1` is the container, not your machine.** Point `SUBWAVE_BASE_URL` at
   `host.docker.internal` (add `--add-host=host.docker.internal:host-gateway` on Linux), or run with
   `--network host` on Linux.
-- **Files it writes will not be yours.** Add `--user "$(id -u):$(id -g)"` so `instance/` and
-  `docs/applied*` stay yours on the host. Without it the container writes as uid 10001.
-- **Backups need somewhere to survive.** Mount a host directory and point `HOME` at it:
-  `-v "$HOME/.runsheet-backups:/backups" -e HOME=/backups`. Use a bind mount rather than a Docker named
-  volume, which is created owned by root and then cannot be written by the container user.
-- **Tier 2 still needs ssh.** Mount the key and `known_hosts` read-only
-  (`-v "$HOME/.ssh:/home/runsheet/.ssh:ro"`); the same `--user "$(id -u):$(id -g)"` that keeps files
-  yours also makes a `600` key readable. A host new to that `known_hosts` fails to verify — connect once
-  from the host first.
+- **Files it writes will not be yours.** On Linux the image's uid (10001) owns whatever it creates in
+  `instance/` and `docs/applied*`. `--user "$(id -u):$(id -g)"` keeps them yours — but read the next
+  bullet first, because it costs you tier 2.
+- **Tier 2 needs the keys mounted and a uid the container can look up.** Mount
+  `-v "$HOME/.ssh:/home/runsheet/.ssh:ro"`, and note `ssh` exits 255 with `No user exists for uid …` for
+  any uid missing from `/etc/passwd`, so `--user` with your own uid leaves you tier 1 only. Keep the
+  default uid 10001 when you need host access; to have both, mount an `/etc/passwd` that names your uid
+  with `/home/runsheet` as its home. A host new to the mounted `known_hosts` fails to verify, so connect
+  once from the host first.
+- **Backups go where you mount them.** `-v "$HOME/.runsheet-backups:/backups"` with
+  `backup --dir /backups` (or `apply --backup-dir /backups`); otherwise the default is
+  `~/.subwave-backups` inside the container and dies with it.
 - **A killed container leaves a lock the next one cannot clear.** The advisory write lock records its
   hostname, and every `docker run` is a new host, so a run that died mid-write blocks the next one. Once
-  no run is active, delete `instance/.runsheet.lock`.
-- **Do not pass `--read-only`.** `apply` records its audit entry under `docs/`; a read-only root
-  filesystem turns that into a warning while the change still lands.
+  no run is active, delete `instance/.runsheet.lock`. A bind mount rather than a named volume matters here
+  too: the lock lives in `instance/`, which has to be writable.
+- **`--read-only` is fine, with one catch.** `instance/`, `docs/applied*` and anything else on a mount
+  stay writable — the audit entry is written under the mount, not an image layer. What becomes read-only
+  is the image's own `HOME` and `/tmp`, so send backups to a mount (`--dir`, above) instead of the
+  default.
 
 Prefer to keep credentials out of `docker inspect`? Mount a shared credentials file and set
 `RUNSHEET_ENV_FILE` to it instead of using `--env-file`.

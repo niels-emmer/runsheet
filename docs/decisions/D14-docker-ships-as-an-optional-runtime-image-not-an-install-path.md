@@ -26,21 +26,25 @@
   - **Mounting `/var/run/docker.sock`** so `docker exec` needs no ssh. That hands the container
     root-equivalent control of the host daemon — disqualifying for a tool whose whole premise is that a
     write is reviewed before it lands.
-  - **`--read-only` as the documented default.** `apply` writes its audit entry under `docs/`, and that
-    write catches `OSError` and downgrades to a warning while the change still lands. The image must not
-    turn the audit trail into something quietly optional.
 - **Consequences:**
   - `.dockerignore` is a security control, not housekeeping. Nothing is copied into the image, but
     `docker build` still uploads the context to the daemon, so a build started from a working checkout
     must not carry a live `.env` or a station's `instance/` into a layer or the build cache. Pinned by
     [`tests/test_docker.py`](../../tests/test_docker.py), which also fails if a `COPY`/`ADD` ever reappears.
-  - Unprivileged by default (uid 10001). On Linux a bind mount is unwritable until the operator passes
-    `--user "$(id -u):$(id -g)"`; that is documented rather than avoided by defaulting to root, because
-    root-owned `instance/` files are the worse failure.
+  - Unprivileged by default (uid 10001), and that uid is coupled to tier 2: `ssh` resolves the calling
+    user with `getpwuid` and exits 255 (`No user exists for uid …`) for a uid missing from `/etc/passwd`,
+    so `--user "$(id -u):$(id -g)"` — the flag that keeps written files owned by the operator — leaves
+    tier 1 only. A uid-agnostic image would need a shell in front of the exec-form entrypoint, which
+    `mcp-server` and signal handling both depend on, so the trade-off is documented instead: keep uid
+    10001 for host access, or mount an `/etc/passwd` naming the operator's uid. Root-owned `instance/`
+    files are the worse failure, so root is not the default.
   - `SUBWAVE_BASE_URL` must not be `127.0.0.1`: inside the container that is the container. The README
     names `host.docker.internal` and `--network host`.
-  - Backups need a writable `HOME` or an explicit directory. A Docker *named volume* is created
-    root-owned, so a bind-mounted host directory is the documented form.
+  - Backups need an explicit directory: `backup --dir` and `apply --backup-dir`. `HOME` works too, but a
+    Docker *named volume* is created root-owned, so a bind-mounted host directory is the documented form.
+  - A read-only root filesystem is compatible: `instance/`, `docs/applied*` and backups are on mounts,
+    so nothing the tool writes touches an image layer. Only the image's own `HOME` (the default backup
+    location) and `/tmp` become read-only, which is why the README points backups at `--dir`.
   - The advisory write lock records `socket.gethostname()`, and every `docker run` is a new host, so a
     container killed mid-write leaves a lock the next one cannot prove is stale — the same rule as a
     foreign host, deliberately. The README says to delete `instance/.runsheet.lock` once no run is
