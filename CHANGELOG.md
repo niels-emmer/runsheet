@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **`capabilities` says what the current tier can do, without attempting it.** A new read-only
+  subcommand reuses `status`'s tier detection and reports, for every top-level verb (`pull`, `diff`,
+  `backup`, `restore`, `apply`, `apply --prune`, `character`, `skills`, `blocklist`, `onair`), whether
+  it is available and, if not, why — mirroring `AGENTS.md`'s tier table and the refusals the write
+  commands already enforce: `backup` and `restore` are refused at tier 1 (no `schedule.json`), and
+  `apply --prune` needs host access. A verb that works but is degraded says so (`pull` is lossy at
+  tier 1, `apply` needs `--no-backup`). `--json` emits `{"tier": …, "capabilities": {…}}` so an
+  orchestrator can decide whether a task is possible before spawning a worker. It changes no other
+  command's output and attempts no network or ssh operation.
 - **Tier 2 is reachable from a bare ssh host.** `status` at tier 1 now probes the host it is given: one
   read-only ssh round trip lists the running containers, inspects their mounts, and reports the first
   mount that already contains a `settings.json`, printing the exact `SUBWAVE_CONTAINER=` and

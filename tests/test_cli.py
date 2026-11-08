@@ -14,8 +14,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "runsheet.py"
 
-COMMANDS = ("status", "pull", "diff", "character", "validate", "apply", "restore",
-            "backup", "blocklist")
+COMMANDS = ("status", "capabilities", "pull", "diff", "character", "validate", "apply",
+            "restore", "backup", "blocklist")
 
 
 def run(*args):
