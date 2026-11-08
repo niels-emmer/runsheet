@@ -91,8 +91,9 @@ from the repo, never a read-modify-write of a trimmed read.
 Two rules the tool must honour everywhere:
 
 1. **Announce the tier.** Every command says which tier it is at and what that costs. Never degrade
-   silently. At tier 1, `status` also probes the host it is given and prints the two `.env` lines that
-   reach tier 2, because those two facts are discoverable and should not be interrogated out of the
+   silently. At tier 1, `status` also probes the host it is given and prints the two lines that
+   reach tier 2 - into the credentials file actually in use (`.env` or the one `RUNSHEET_ENV_FILE`
+   names), because those two facts are discoverable and should not be interrogated out of the
    operator ([D13](decisions/D13-tier-2-is-discovered-from-a-bare-ssh-host-not-interrogated-out-of-the-operator.md)).
 2. **Never read-modify-write at tier 1.** Whole objects from the repo, or nothing.
 

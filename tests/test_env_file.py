@@ -7,6 +7,8 @@ the contract: real environment > the named file > ./.env, and the named file
 replaces .env rather than merging with it.
 """
 
+import contextlib
+import io
 import os
 import shutil
 import subprocess
@@ -113,6 +115,47 @@ class EnvFileTestCase(unittest.TestCase):
         missing = str(self.tmp / "nope.env")
         with self.assertRaises(runsheet.ConfigError):
             runsheet.Config(environ={runsheet.ENV_FILE_VAR: missing})
+
+    # -- guidance names the file actually read ------------------------------
+    def test_guidance_names_the_named_file(self):
+        shared = self.credentials("shared.env", SUBWAVE_HOST="radio@host")
+        config = runsheet.Config(environ={runsheet.ENV_FILE_VAR: str(shared)})
+        self.assertEqual(config.credentials_file(),
+                         "%s (%s)" % (shared, runsheet.ENV_FILE_VAR))
+
+    def test_missing_base_url_names_the_named_file(self):
+        shared = self.credentials("shared.env", SUBWAVE_HOST="radio@host")
+        config = runsheet.Config(environ={runsheet.ENV_FILE_VAR: str(shared)})
+        with self.assertRaises(runsheet.ConfigError) as caught:
+            config.require_http()
+        self.assertIn(str(shared), str(caught.exception))
+        self.assertIn(runsheet.ENV_FILE_VAR, str(caught.exception))
+        self.assertNotIn("Copy .env.example to .env", str(caught.exception))
+
+    def test_guidance_is_unchanged_when_the_named_file_is_unset(self):
+        self.repo_with_dotenv(SUBWAVE_HOST="radio@host")
+        config = runsheet.Config(environ={})
+        self.assertEqual(config.credentials_file(), ".env")
+        with self.assertRaises(runsheet.ConfigError) as caught:
+            config.require_http()
+        self.assertIn("Copy .env.example to .env", str(caught.exception))
+
+    def test_tier_2_hint_names_the_named_file(self):
+        shared = self.credentials("shared.env", SUBWAVE_HOST="radio@host")
+        config = runsheet.Config(environ={runsheet.ENV_FILE_VAR: str(shared)})
+        saved = runsheet.discover_state_dirs
+        runsheet.discover_state_dirs = lambda cfg: (
+            [("sub-wave-controller", "/var/sub-wave")], "")
+        self.addCleanup(setattr, runsheet, "discover_state_dirs", saved)
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            runsheet._print_tier2_help(config)
+
+        text = output.getvalue()
+        self.assertIn("add to %s (%s):" % (shared, runsheet.ENV_FILE_VAR), text)
+        self.assertIn("SUBWAVE_STATE_DIR=/var/sub-wave", text)
+        self.assertNotIn("add to .env:", text)
 
     def test_the_cli_reports_a_missing_named_file_without_a_traceback(self):
         env = {
