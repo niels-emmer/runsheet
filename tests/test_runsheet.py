@@ -7,6 +7,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import shlex
 import shutil
 import tempfile
@@ -26,6 +27,19 @@ def load_tool():
 
 
 runsheet = load_tool()
+
+
+def scrub_station_environment():
+    """The suite is offline: strip anything that could reach a real station.
+
+    Fixtures that drive `main()` then put the mock's SUBWAVE_* values in place.
+    RUNSHEET_ENV_FILE has no mock equivalent, so it must go too: left in place,
+    Config() would read the developer's shared credentials file and these
+    in-process tests would probe - and on `apply`, read - the live station.
+    """
+    for key in [name for name in os.environ if name.startswith("SUBWAVE_")]:
+        os.environ.pop(key, None)
+    os.environ.pop(runsheet.ENV_FILE_VAR, None)
 
 
 # -- fixtures ---------------------------------------------------------------
