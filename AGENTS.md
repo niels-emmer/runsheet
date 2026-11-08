@@ -178,6 +178,8 @@ sh scripts/check-secrets.sh          # commit gate: tracked files
 sh scripts/check-secrets.sh --all    # also untracked-but-not-ignored
 python3 -m unittest discover -s tests  # offline: the mock station is in-process
 
+python3 scripts/runsheet.py init --host you@your-server  # write .env: discover host access in one step
+python3 scripts/runsheet.py init --base-url URL          # or record an HTTP-only station
 python3 scripts/runsheet.py status    # tier, station, on-air state, repo sync
 python3 scripts/runsheet.py capabilities [--json]  # what this tier can do, without attempting it
 python3 scripts/runsheet.py --mock status   # any station command against the in-process mock (no network)
