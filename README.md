@@ -162,7 +162,8 @@ dependencies.
 Working from many checkouts against one station? Keep the credentials in one file outside all of them,
 e.g. `~/.config/runsheet/station.env` (same `KEY=VALUE` lines as `.env.example`), and export
 `RUNSHEET_ENV_FILE=~/.config/runsheet/station.env`. Every ephemeral worktree then loads its `SUBWAVE_*`
-values from that file and needs no `.env` of its own. Precedence: variables already exported in the
+values from that file and needs no `.env` of its own — and `init` writes to that file when the variable
+is set, so one command configures the shared file directly. Precedence: variables already exported in the
 environment win, then the file named by `RUNSHEET_ENV_FILE`, then `./.env` — and a named file replaces
 `./.env` rather than merging with it, so two stations' credentials cannot be mixed. A path that is set
 but missing is a configuration error, not a silent fallback.

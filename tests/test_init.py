@@ -233,7 +233,7 @@ class Tier1InitTests(InitTestCase):
         # RUNSHEET_ENV_FILE replaces ./.env for Config, so init must write there
         # or it would create a file the tool never reads.
         shared = self.tmp / "shared.env"
-        shared.write_text("SUBWAVE_ADMIN_USER=admin\n", encoding="utf-8")
+        shared.write_text("# shared credentials, no values yet\n", encoding="utf-8")
         os.environ["RUNSHEET_ENV_FILE"] = str(shared)
 
         code, output = self.run_cli("init", "--base-url", "http://127.0.0.1:7700",

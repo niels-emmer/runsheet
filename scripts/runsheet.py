@@ -1294,8 +1294,8 @@ def cmd_init(config, args):
         for line in _masked_env_lines(values):
             print("          %s" % line, flush=True)
         raise ToolError(
-            ".env already holds a station (%s). Refusing to overwrite: re-run with --force "
-            "to update it." % env_path)
+            "the credentials file already holds a station (%s). Refusing to overwrite: re-run "
+            "with --force to update it." % env_path)
 
     if env_path.is_file():
         text = env_path.read_text(encoding="utf-8")
