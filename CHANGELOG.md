@@ -35,14 +35,26 @@ All notable changes to this project are documented here. The format is based on
   (the image default leads), remote-shell noise, an unreachable host, and every `status` message — with
   `ssh_run` stubbed, so it needs no ssh.
 - `AGENTS.md` gains a **Which procedure to load** table. No agent scans a repo-root `skills/` automatically
-  (Claude Code reads `.claude/skills/`, OpenCode `.opencode/skills/`, Codex has none), so the table is the
-  discovery surface rather than an unread directory.
+  (Claude Code reads `.claude/skills/`, OpenCode `.opencode/skills/` and `.agents/skills/`, Codex
+  `.agents/skills`), so the table is the discovery surface rather than an unread directory.
 - The README names the station's own MCP endpoint as the **no-checkout door**: `/api/mcp`, 21 tools, reads
   plus on-air control — and states plainly that it has no diff, no dry run, no backup and no undo, and
   cannot touch configuration.
 
 ### Changed
 
+- **Claude Code, Codex and OpenCode now discover the five skills natively.**
+  `.claude/skills/<name>/SKILL.md` is a committed relative symlink to `../../../skills/<name>/SKILL.md`, and
+  `.agents/skills/<name>` is a relative symlink to the skill's folder (`../../skills/<name>`) — the location
+  Codex scans from the working directory up to the repo root, in the form its docs describe following through
+  a symlink. OpenCode reads both as project compatibility sources, so two directories cover all three agents
+  and every loader finds `add-host`, `new-show`, `explain-host`, `tune-host` and `backup` without an agent
+  having read `AGENTS.md` first. Symlinks rather than generated pointer files: git stores them as mode
+  `120000`, a relative target resolves from a plain clone and from a linked worktree, and there is no second
+  file to regenerate or let drift. [`tests/test_skill_discovery.py`](tests/test_skill_discovery.py) pins all
+  three surfaces for every tracked skill, so a link replaced by a real copy fails the suite. The `AGENTS.md`
+  table stays the routing surface for any other agent, and for these it remains the authority on the
+  verb-decides rule.
 - **The decision log and the applied log are now one entry per file.** [`docs/decision-log.md`](docs/decision-log.md)
   and [`docs/applied.md`](docs/applied.md) are indexes; each decision lives at
   `docs/decisions/D<n>-<slug>.md` and each applied row at `docs/applied/<date>-<slug>.md`. Both logs were

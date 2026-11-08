@@ -38,7 +38,11 @@ persona hosts which show — live in `instance/character/` and are reviewed ther
 
 **C2 — agent-agnostic.** The unit of installation is the clone, and the only universally-read artifact in
 it is `AGENTS.md`. No agent-specific assumption may enter the tool, the skills or the docs. See
-[skills/README.md](../skills/README.md) for why the procedure directory needs that hub.
+[skills/README.md](../skills/README.md) for why the procedure directory needs that hub. Committing two
+tool-owned discovery directories (`.claude/skills/`, `.agents/skills/`) does not breach this: they hold only
+relative symlinks into `skills/`, no behaviour depends on them, and an agent that scans neither loses only the
+trigger hints — `AGENTS.md` still routes every request. `tests/test_skill_discovery.py` keeps the three
+surfaces in parity.
 
 ## The finding: the documented API is not the config API
 
@@ -225,7 +229,9 @@ CONTRIBUTING.md           setup, checks, conventions
 SECURITY.md               threat model and accepted risks
 scripts/runsheet.py        the tool: one file, standard library only
 scripts/check-secrets.sh  the commit gate and CI check
-skills/<name>/SKILL.md    agent procedures (discovered through AGENTS.md)
+skills/<name>/SKILL.md    agent procedures — the only copy of each
+.claude/skills/<name>/    SKILL.md symlink -> ../../../skills/<name>/SKILL.md (Claude Code)
+.agents/skills/<name>     folder symlink -> ../../skills/<name> (Codex; OpenCode reads both)
 examples/demo/            committed fictional station, same shape as instance/
 tests/                    offline suite; mock_station.py serves a real-shaped controller
 docs/ARCHITECTURE.md      this file

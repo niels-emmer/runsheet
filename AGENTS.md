@@ -198,9 +198,15 @@ python3 scripts/runsheet.py apply     # DRY RUN by default; --yes performs the w
 
 ## Which procedure to load
 
-`skills/<name>/SKILL.md` holds the rehearsed procedures. No agent scans that directory automatically —
-Claude Code reads `.claude/skills/`, OpenCode reads `.opencode/skills/`, Codex has no skills directory — so
-this table is the discovery surface. Match the verb, load the body.
+`skills/<name>/SKILL.md` holds the rehearsed procedures and is the only copy of them. All three named agents
+reach the five through committed relative symlinks rather than copies: `.claude/skills/<name>/SKILL.md` points
+at `../../../skills/<name>/SKILL.md` for Claude Code, and `.agents/skills/<name>` points at the skill's folder
+(`../../skills/<name>`) for Codex, which scans that path from the working directory up to the repo root.
+OpenCode reads both directories as project compatibility sources. None of that rests on prose:
+`tests/test_skill_discovery.py` fails if a skill has no link, if a link is anything but symlink mode `120000`
+with that exact relative target, or if it is missing a row below. This table is still the routing surface for
+an agent whose loader is neither directory, and for all three it remains the only place the verb-decides rule
+lives. Match the verb, load the body. A new skill needs its `SKILL.md`, both links, and a row here.
 
 | Skill | Answers | Say something like |
 | --- | --- | --- |
