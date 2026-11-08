@@ -20,9 +20,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import mock_station
-from test_subwave import load_tool
+from test_runsheet import load_tool
 
-subwave = load_tool()
+runsheet = load_tool()
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "station.json"
 
 
@@ -43,22 +43,22 @@ class BlocklistTestCase(unittest.TestCase):
             "SUBWAVE_ADMIN_PASS": "mock-pass",
         })
 
-        self._saved = (subwave.INSTANCE_DIR, subwave.SshStateSource,
-                       subwave.read_state_file, subwave.detect_tier,
-                       subwave.builtin_skill_slugs)
-        subwave.INSTANCE_DIR = self.tmp / "instance"
-        subwave.SshStateSource = lambda config: subwave.LocalStateSource(
+        self._saved = (runsheet.INSTANCE_DIR, runsheet.SshStateSource,
+                       runsheet.read_state_file, runsheet.detect_tier,
+                       runsheet.builtin_skill_slugs)
+        runsheet.INSTANCE_DIR = self.tmp / "instance"
+        runsheet.SshStateSource = lambda config: runsheet.LocalStateSource(
             self.server.state_dir)
-        subwave.read_state_file = lambda config, name: json.dumps(
+        runsheet.read_state_file = lambda config, name: json.dumps(
             self.server.station.settings if name == "settings.json"
             else self.server.station.schedule)
-        subwave.detect_tier = lambda config, probe=None: (2, "mock")
-        subwave.builtin_skill_slugs = lambda config, state: {"curiosity"}
+        runsheet.detect_tier = lambda config, probe=None: (2, "mock")
+        runsheet.builtin_skill_slugs = lambda config, state: {"curiosity"}
         self.addCleanup(self._restore)
 
         document = json.loads(FIXTURE.read_text(encoding="utf-8"))
-        model = subwave.build_live_model(document["settings"], document["schedule"])
-        subwave.write_instance(model, {}, capture={
+        model = runsheet.build_live_model(document["settings"], document["schedule"])
+        runsheet.write_instance(model, {}, capture={
             "tier": 2, "at": "2026-10-31T00:00:00Z", "lossy": False, "lost": []})
 
     def _restore_environ(self):
@@ -66,22 +66,22 @@ class BlocklistTestCase(unittest.TestCase):
         os.environ.update(self._saved_environ)
 
     def _restore(self):
-        (subwave.INSTANCE_DIR, subwave.SshStateSource,
-         subwave.read_state_file, subwave.detect_tier,
-         subwave.builtin_skill_slugs) = self._saved
+        (runsheet.INSTANCE_DIR, runsheet.SshStateSource,
+         runsheet.read_state_file, runsheet.detect_tier,
+         runsheet.builtin_skill_slugs) = self._saved
 
     # -- helpers -----------------------------------------------------------
     def run_cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                code = subwave.main(list(args))
+                code = runsheet.main(list(args))
             except SystemExit as exc:
                 code = exc.code
         return code, out.getvalue() + err.getvalue()
 
     def blocklist_path(self):
-        return subwave.INSTANCE_DIR / subwave.BLOCKLIST_FILE
+        return runsheet.INSTANCE_DIR / runsheet.BLOCKLIST_FILE
 
     def repo_blocklist(self):
         return json.loads(self.blocklist_path().read_text())
@@ -94,7 +94,7 @@ class BlocklistTestCase(unittest.TestCase):
         self.server.station.blocklist = (json.loads(json.dumps(document))
                                          if document is not None
                                          else {"entries": [], "rules": []})
-        path = Path(self.server.state_dir) / subwave.BLOCKLIST_FILE
+        path = Path(self.server.state_dir) / runsheet.BLOCKLIST_FILE
         if document is None:
             path.unlink(missing_ok=True)
         else:
@@ -130,7 +130,7 @@ class PullTests(BlocklistTestCase):
         self.assertEqual(code, 0, output)
         self.assertEqual(self.repo_blocklist(), {"entries": [], "rules": []})
 
-        capture = json.loads((subwave.INSTANCE_DIR / "ids.lock.json").read_text())["capture"]
+        capture = json.loads((runsheet.INSTANCE_DIR / "ids.lock.json").read_text())["capture"]
         self.assertFalse(capture["lossy"], "a missing blocklist is not a lossy capture")
 
     def test_show_ids_are_captured_as_slugs(self):
@@ -165,7 +165,7 @@ class CredentialTests(BlocklistTestCase):
         self.assertEqual(api_calls, [], "tier 2 reads the state file, not the API")
 
     def test_tier_1_pull_reads_the_blocklist_over_the_api(self):
-        subwave.detect_tier = lambda config, probe=None: (1, "mock")
+        runsheet.detect_tier = lambda config, probe=None: (1, "mock")
 
         code, output = self.run_cli("pull", "--allow-lossy", "--force")
         self.assertEqual(code, 0, output)
@@ -254,46 +254,46 @@ class DiffTests(BlocklistTestCase):
 
 class BackupRestoreTests(BlocklistTestCase):
     def test_backup_carries_the_blocklist_and_says_why(self):
-        destination, manifest = subwave.take_backup(self.config(), self.tmp / "backups")
-        self.assertIn(subwave.BLOCKLIST_FILE, manifest["copied"])
-        self.assertTrue((destination / subwave.BLOCKLIST_FILE).is_file())
+        destination, manifest = runsheet.take_backup(self.config(), self.tmp / "backups")
+        self.assertIn(runsheet.BLOCKLIST_FILE, manifest["copied"])
+        self.assertTrue((destination / runsheet.BLOCKLIST_FILE).is_file())
 
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            subwave.print_manifest(destination, manifest)
+            runsheet.print_manifest(destination, manifest)
         output = buffer.getvalue()
         self.assertIn("blocklist.json", output)
         self.assertIn("omits blocklist.json", output,
                       "the manifest must say why our backup exists")
 
     def test_restore_puts_the_blocklist_back(self):
-        destination, _ = subwave.take_backup(self.config(), self.tmp / "backups")
-        original = (Path(self.server.state_dir) / subwave.BLOCKLIST_FILE).read_bytes()
-        (Path(self.server.state_dir) / subwave.BLOCKLIST_FILE).unlink()
+        destination, _ = runsheet.take_backup(self.config(), self.tmp / "backups")
+        original = (Path(self.server.state_dir) / runsheet.BLOCKLIST_FILE).read_bytes()
+        (Path(self.server.state_dir) / runsheet.BLOCKLIST_FILE).unlink()
 
         args = type("A", (), {"directory": str(destination), "yes": True,
                               "force_now": True})()
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            code = subwave.cmd_restore(self.config(), args)
+            code = runsheet.cmd_restore(self.config(), args)
         self.assertEqual(code, 0, buffer.getvalue())
         self.assertEqual(
-            (Path(self.server.state_dir) / subwave.BLOCKLIST_FILE).read_bytes(), original)
+            (Path(self.server.state_dir) / runsheet.BLOCKLIST_FILE).read_bytes(), original)
 
     def test_restore_writes_the_blocklist_before_assets(self):
-        destination, _ = subwave.take_backup(self.config(), self.tmp / "backups")
+        destination, _ = runsheet.take_backup(self.config(), self.tmp / "backups")
         args = type("A", (), {"directory": str(destination), "yes": False,
                               "force_now": True})()
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            subwave.cmd_restore(self.config(), args)
+            runsheet.cmd_restore(self.config(), args)
         lines = [line for line in buffer.getvalue().splitlines() if line.startswith("would")]
         blocklist_at = next(index for index, line in enumerate(lines) if "blocklist.json" in line)
         first_asset = next(index for index, line in enumerate(lines) if "/skills/" in line)
         self.assertLess(blocklist_at, first_asset, "config goes back before assets")
 
     def config(self):
-        return subwave.Config(dotenv={}, environ={
+        return runsheet.Config(dotenv={}, environ={
             "SUBWAVE_BASE_URL": self.server.url,
             "SUBWAVE_ADMIN_USER": "mock-admin",
             "SUBWAVE_ADMIN_PASS": "mock-pass",

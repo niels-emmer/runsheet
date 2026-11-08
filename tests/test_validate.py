@@ -17,9 +17,9 @@ from pathlib import Path
 # sys.path, a dotted `unittest tests.test_validate` does not.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_subwave import load_tool
+from test_runsheet import load_tool
 
-subwave = load_tool()
+runsheet = load_tool()
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "station.json"
 DEMO_DIR = REPO_ROOT / "examples" / "demo"
@@ -29,15 +29,15 @@ class ValidateTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self._saved = subwave.INSTANCE_DIR
-        subwave.INSTANCE_DIR = self.tmp / "instance"
-        self.addCleanup(lambda: setattr(subwave, "INSTANCE_DIR", self._saved))
+        self._saved = runsheet.INSTANCE_DIR
+        runsheet.INSTANCE_DIR = self.tmp / "instance"
+        self.addCleanup(lambda: setattr(runsheet, "INSTANCE_DIR", self._saved))
 
         document = json.loads(FIXTURE.read_text(encoding="utf-8"))
-        model = subwave.build_live_model(document["settings"], document["schedule"])
-        subwave.write_instance(model, {}, capture={
+        model = runsheet.build_live_model(document["settings"], document["schedule"])
+        runsheet.write_instance(model, {}, capture={
             "tier": 2, "at": "2026-10-31T00:00:00Z", "lossy": False, "lost": []})
-        self.root = subwave.INSTANCE_DIR
+        self.root = runsheet.INSTANCE_DIR
 
     # -- helpers -----------------------------------------------------------
     def path(self, *parts):
@@ -52,7 +52,7 @@ class ValidateTestCase(unittest.TestCase):
     def run_validate(self):
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            code = subwave.cmd_validate(None, argparse.Namespace())
+            code = runsheet.cmd_validate(None, argparse.Namespace())
         return code, buffer.getvalue()
 
     def show_file(self):
@@ -240,13 +240,13 @@ class DemoDirTests(unittest.TestCase):
     def run_validate(self, root):
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            code = subwave.cmd_validate(None, argparse.Namespace(dir=str(root)))
+            code = runsheet.cmd_validate(None, argparse.Namespace(dir=str(root)))
         return code, buffer.getvalue()
 
     def test_validate_takes_a_dir_and_still_defaults_to_instance(self):
-        self.assertIsNone(subwave.build_parser().parse_args(["validate"]).dir,
+        self.assertIsNone(runsheet.build_parser().parse_args(["validate"]).dir,
                           "the default must stay instance/")
-        args = subwave.build_parser().parse_args(["validate", "--dir", "examples/demo"])
+        args = runsheet.build_parser().parse_args(["validate", "--dir", "examples/demo"])
         self.assertEqual(args.dir, "examples/demo")
 
     def test_the_committed_demo_passes(self):
@@ -336,10 +336,10 @@ class ApplyRefusalTests(ValidateTestCase):
         self.edit("character", "shows", path.name, mutate=lambda d: d.pop("genres"))
         args = argparse.Namespace(yes=True, force_now=True, no_backup=True,
                                   prune=False, backup_dir=None)
-        config = subwave.Config(dotenv={}, environ={"SUBWAVE_BASE_URL": "http://127.0.0.1:1"})
-        with self.assertRaises(subwave.ToolError) as caught:
+        config = runsheet.Config(dotenv={}, environ={"SUBWAVE_BASE_URL": "http://127.0.0.1:1"})
+        with self.assertRaises(runsheet.ToolError) as caught:
             with contextlib.redirect_stdout(io.StringIO()):
-                subwave.cmd_apply(config, args)
+                runsheet.cmd_apply(config, args)
         self.assertIn("validate", str(caught.exception))
         self.assertIn("'genres'", str(caught.exception))
 
@@ -349,10 +349,10 @@ class ApplyRefusalTests(ValidateTestCase):
                   mutate=lambda d: d.__setitem__("personaId", "p_ghost"))
         args = argparse.Namespace(yes=True, force_now=True, no_backup=True,
                                   prune=False, backup_dir=None)
-        config = subwave.Config(dotenv={}, environ={"SUBWAVE_BASE_URL": "http://127.0.0.1:1"})
-        with self.assertRaises(subwave.ToolError) as caught:
+        config = runsheet.Config(dotenv={}, environ={"SUBWAVE_BASE_URL": "http://127.0.0.1:1"})
+        with self.assertRaises(runsheet.ToolError) as caught:
             with contextlib.redirect_stdout(io.StringIO()):
-                subwave.cmd_apply(config, args)
+                runsheet.cmd_apply(config, args)
         self.assertIn("p_ghost", str(caught.exception))
 
 

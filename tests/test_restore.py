@@ -16,9 +16,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import mock_station
-from test_subwave import load_tool
+from test_runsheet import load_tool
 
-subwave = load_tool()
+runsheet = load_tool()
 
 
 class RestoreTestCase(unittest.TestCase):
@@ -32,13 +32,13 @@ class RestoreTestCase(unittest.TestCase):
         self.state_dir = self.server.state_dir
         self.backups = self.tmp / "backups"
 
-        self._saved_source = subwave.SshStateSource
-        self._saved_tier = subwave.detect_tier
-        subwave.SshStateSource = lambda config: subwave.LocalStateSource(self.state_dir)
-        subwave.detect_tier = lambda config, probe=None: (2, "mock state dir")
+        self._saved_source = runsheet.SshStateSource
+        self._saved_tier = runsheet.detect_tier
+        runsheet.SshStateSource = lambda config: runsheet.LocalStateSource(self.state_dir)
+        runsheet.detect_tier = lambda config, probe=None: (2, "mock state dir")
         self.addCleanup(self._restore)
 
-        self.config = subwave.Config(dotenv={}, environ={
+        self.config = runsheet.Config(dotenv={}, environ={
             "SUBWAVE_BASE_URL": self.server.url,
             "SUBWAVE_ADMIN_USER": "mock-admin",
             "SUBWAVE_ADMIN_PASS": "mock-pass",
@@ -47,12 +47,12 @@ class RestoreTestCase(unittest.TestCase):
         })
 
     def _restore(self):
-        subwave.SshStateSource = self._saved_source
-        subwave.detect_tier = self._saved_tier
+        runsheet.SshStateSource = self._saved_source
+        runsheet.detect_tier = self._saved_tier
 
     # -- helpers -----------------------------------------------------------
     def make_backup(self):
-        destination, _ = subwave.take_backup(self.config, self.backups)
+        destination, _ = runsheet.take_backup(self.config, self.backups)
         return destination
 
     def run_restore(self, directory, *flags):
@@ -63,7 +63,7 @@ class RestoreTestCase(unittest.TestCase):
         })()
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            code = subwave.cmd_restore(self.config, args)
+            code = runsheet.cmd_restore(self.config, args)
         return code, buffer.getvalue()
 
     def read_state(self, relative):
@@ -73,9 +73,9 @@ class RestoreTestCase(unittest.TestCase):
         """Remove the config and assets, leaving the directory itself."""
         for name in ("settings.json", "schedule.json"):
             (Path(self.state_dir) / name).unlink()
-        for name in subwave.ASSET_DIRS:
+        for name in runsheet.ASSET_DIRS:
             shutil.rmtree(Path(self.state_dir) / name, ignore_errors=True)
-        for name in subwave.ASSET_MANIFESTS:
+        for name in runsheet.ASSET_MANIFESTS:
             target = Path(self.state_dir) / name
             if target.exists():
                 target.unlink()
@@ -150,7 +150,7 @@ class OnAirTests(RestoreTestCase):
     def test_refuses_while_on_air(self):
         backup = self.make_backup()
         # the mock reports an active show, so this is the default path
-        with self.assertRaises(subwave.ToolError) as caught:
+        with self.assertRaises(runsheet.ToolError) as caught:
             self.run_restore(backup, "--yes")
         message = str(caught.exception)
         self.assertIn("on air", message)
@@ -167,7 +167,7 @@ class IncompleteBackupTests(RestoreTestCase):
         backup = self.make_backup()
         (backup / "state" / "sfx" / "sfx-one.mp3").unlink()
         before = self.read_state("settings.json")
-        with self.assertRaises(subwave.ToolError) as caught:
+        with self.assertRaises(runsheet.ToolError) as caught:
             self.run_restore(backup, "--yes", "--force-now")
         self.assertIn("incomplete", str(caught.exception))
         self.assertEqual(self.read_state("settings.json"), before, "nothing may be written")
@@ -177,21 +177,21 @@ class IncompleteBackupTests(RestoreTestCase):
         schedule = json.loads((backup / "schedule.json").read_text())
         schedule["schedule"]["0"][0] = "s_not_in_this_backup"
         (backup / "schedule.json").write_text(json.dumps(schedule))
-        with self.assertRaises(subwave.ToolError) as caught:
+        with self.assertRaises(runsheet.ToolError) as caught:
             self.run_restore(backup, "--yes", "--force-now")
         self.assertIn("cannot restore the programming", str(caught.exception))
 
     def test_missing_schedule_is_refused(self):
         backup = self.make_backup()
         (backup / "schedule.json").unlink()
-        with self.assertRaises(subwave.ToolError) as caught:
+        with self.assertRaises(runsheet.ToolError) as caught:
             self.run_restore(backup, "--yes", "--force-now")
         self.assertIn("not a complete backup", str(caught.exception))
 
     def test_unparseable_settings_is_refused(self):
         backup = self.make_backup()
         (backup / "settings.json").write_text("{not json")
-        with self.assertRaises(subwave.ToolError) as caught:
+        with self.assertRaises(runsheet.ToolError) as caught:
             self.run_restore(backup, "--yes", "--force-now")
         self.assertIn("not valid JSON", str(caught.exception))
 
@@ -204,7 +204,7 @@ class RollbackTests(RestoreTestCase):
 
         # A source that corrupts the schedule on the way in: the writes succeed,
         # the station does not validate, and the previous state must return.
-        class CorruptingSource(subwave.LocalStateSource):
+        class CorruptingSource(runsheet.LocalStateSource):
             """Corrupts the schedule once, on the way in - not on the rollback."""
 
             corrupted = False
@@ -215,8 +215,8 @@ class RollbackTests(RestoreTestCase):
                     payload = b'{"shows": [], "schedule": {}}'
                 super().write_bytes(relative, payload)
 
-        subwave.SshStateSource = lambda config: CorruptingSource(self.state_dir)
-        with self.assertRaises(subwave.ToolError) as caught:
+        runsheet.SshStateSource = lambda config: CorruptingSource(self.state_dir)
+        with self.assertRaises(runsheet.ToolError) as caught:
             self.run_restore(backup, "--yes", "--force-now")
         self.assertIn("did not validate", str(caught.exception))
 
@@ -228,14 +228,14 @@ class RollbackTests(RestoreTestCase):
         backup = self.make_backup()
         original_settings = self.read_state("settings.json")
 
-        class FailingSource(subwave.LocalStateSource):
+        class FailingSource(runsheet.LocalStateSource):
             def write_bytes(self, relative, payload):
                 if relative.startswith("sfx/"):
-                    raise subwave.ToolError("disk full")
+                    raise runsheet.ToolError("disk full")
                 super().write_bytes(relative, payload)
 
-        subwave.SshStateSource = lambda config: FailingSource(self.state_dir)
-        with self.assertRaises(subwave.ToolError) as caught:
+        runsheet.SshStateSource = lambda config: FailingSource(self.state_dir)
+        with self.assertRaises(runsheet.ToolError) as caught:
             self.run_restore(backup, "--yes", "--force-now")
         self.assertIn("previous state was put back", str(caught.exception))
         self.assertEqual(self.read_state("settings.json"), original_settings)
@@ -245,19 +245,19 @@ class RollbackTests(RestoreTestCase):
         # what happened, so a half-written station read as a clean undo.
         backup = self.make_backup()
 
-        class BrokenRollbackSource(subwave.LocalStateSource):
+        class BrokenRollbackSource(runsheet.LocalStateSource):
             failing = False
 
             def write_bytes(self, relative, payload):
                 if relative.startswith("sfx/"):
                     self.failing = True
-                    raise subwave.ToolError("disk full")
+                    raise runsheet.ToolError("disk full")
                 if self.failing and relative == "settings.json":
-                    raise subwave.ToolError("permission denied")
+                    raise runsheet.ToolError("permission denied")
                 super().write_bytes(relative, payload)
 
-        subwave.SshStateSource = lambda config: BrokenRollbackSource(self.state_dir)
-        with self.assertRaises(subwave.ToolError) as caught:
+        runsheet.SshStateSource = lambda config: BrokenRollbackSource(self.state_dir)
+        with self.assertRaises(runsheet.ToolError) as caught:
             self.run_restore(backup, "--yes", "--force-now")
 
         message = str(caught.exception)
@@ -270,12 +270,12 @@ class RollbackTests(RestoreTestCase):
 class TierTests(RestoreTestCase):
     def test_tier_1_refuses_and_explains_why(self):
         self._restore()  # back to real tier detection, which needs ssh
-        config = subwave.Config(dotenv={}, environ={"SUBWAVE_BASE_URL": self.server.url})
+        config = runsheet.Config(dotenv={}, environ={"SUBWAVE_BASE_URL": self.server.url})
         args = type("Args", (), {"directory": str(self.tmp), "yes": False,
                                  "force_now": False})()
-        with self.assertRaises(subwave.ToolError) as caught:
+        with self.assertRaises(runsheet.ToolError) as caught:
             with contextlib.redirect_stdout(io.StringIO()):
-                subwave.cmd_restore(config, args)
+                runsheet.cmd_restore(config, args)
         self.assertIn("schedule.json", str(caught.exception))
 
 

@@ -18,9 +18,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import mock_station
-from test_subwave import load_tool
+from test_runsheet import load_tool
 
-subwave = load_tool()
+runsheet = load_tool()
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "station.json"
 
 
@@ -41,45 +41,45 @@ class PruneTestCase(unittest.TestCase):
             "SUBWAVE_ADMIN_PASS": "mock-pass",
         })
 
-        self._saved = (subwave.INSTANCE_DIR, subwave.SshStateSource,
-                       subwave.read_state_file, subwave.detect_tier)
-        subwave.INSTANCE_DIR = self.tmp / "instance"
-        subwave.SshStateSource = lambda config: subwave.LocalStateSource(
+        self._saved = (runsheet.INSTANCE_DIR, runsheet.SshStateSource,
+                       runsheet.read_state_file, runsheet.detect_tier)
+        runsheet.INSTANCE_DIR = self.tmp / "instance"
+        runsheet.SshStateSource = lambda config: runsheet.LocalStateSource(
             self.server.state_dir)
-        subwave.read_state_file = lambda config, name: json.dumps(
+        runsheet.read_state_file = lambda config, name: json.dumps(
             self.server.station.settings if name == "settings.json"
             else self.server.station.schedule)
-        subwave.detect_tier = lambda config, probe=None: (2, "mock")
+        runsheet.detect_tier = lambda config, probe=None: (2, "mock")
         self.addCleanup(self._restore)
 
         document = json.loads(FIXTURE.read_text(encoding="utf-8"))
-        model = subwave.build_live_model(document["settings"], document["schedule"])
-        subwave.write_instance(model, {}, capture={
+        model = runsheet.build_live_model(document["settings"], document["schedule"])
+        runsheet.write_instance(model, {}, capture={
             "tier": 2, "at": "2026-10-31T00:00:00Z", "lossy": False, "lost": []})
         blocklist = json.loads(json.dumps(self.server.station.blocklist))
-        subwave.assign_rule_slugs(blocklist["rules"], {})
-        subwave.write_json(subwave.INSTANCE_DIR / subwave.BLOCKLIST_FILE, blocklist)
+        runsheet.assign_rule_slugs(blocklist["rules"], {})
+        runsheet.write_json(runsheet.INSTANCE_DIR / runsheet.BLOCKLIST_FILE, blocklist)
         lock = {"version": 1, "rules": {}, "ids": {}}
         for rule in blocklist["rules"]:
             if rule.get("id"):
                 lock["rules"][rule["slug"]] = rule["id"]
                 lock["ids"][rule["id"]] = rule["slug"]
-        subwave.write_json(subwave.INSTANCE_DIR / subwave.BLOCKLIST_LOCK, lock)
+        runsheet.write_json(runsheet.INSTANCE_DIR / runsheet.BLOCKLIST_LOCK, lock)
 
     def _restore_environ(self):
         os.environ.clear()
         os.environ.update(self._saved_environ)
 
     def _restore(self):
-        (subwave.INSTANCE_DIR, subwave.SshStateSource,
-         subwave.read_state_file, subwave.detect_tier) = self._saved
+        (runsheet.INSTANCE_DIR, runsheet.SshStateSource,
+         runsheet.read_state_file, runsheet.detect_tier) = self._saved
 
     # -- helpers -----------------------------------------------------------
     def run_cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                code = subwave.main(list(args))
+                code = runsheet.main(list(args))
             except SystemExit as exc:
                 code = exc.code
         return code, out.getvalue() + err.getvalue()
@@ -149,12 +149,12 @@ class ShowTests(PruneTestCase):
 
     def test_clearing_cells_empties_a_repo_grid_that_pointed_at_it(self):
         # Unit-level: the repo grid can still name a show that was pruned.
-        path = subwave.INSTANCE_DIR / "character" / "schedule.json"
+        path = runsheet.INSTANCE_DIR / "character" / "schedule.json"
         document = json.loads(path.read_text())
         document["schedule"]["2"][4] = "orphan-show"
         path.write_text(json.dumps(document))
 
-        cleared = subwave.clear_show_cells(["s_orphan1"],
+        cleared = runsheet.clear_show_cells(["s_orphan1"],
                                            {"shows": {"orphan-show": "s_orphan1"}})
         self.assertEqual(cleared, 1)
         after = json.loads(path.read_text())
@@ -219,7 +219,7 @@ class BackupTests(PruneTestCase):
 class BlocklistTests(PruneTestCase):
     def test_a_pending_rule_is_deleted_only_under_prune(self):
         # Remove the rule from the local file; the lock still knows its uuid.
-        path = subwave.INSTANCE_DIR / subwave.BLOCKLIST_FILE
+        path = runsheet.INSTANCE_DIR / runsheet.BLOCKLIST_FILE
         document = json.loads(path.read_text())
         slug = document["rules"][0]["slug"]
         document["rules"] = []
@@ -242,7 +242,7 @@ class BlocklistTests(PruneTestCase):
 class OrderingTests(PruneTestCase):
     def test_a_failed_verification_leaves_the_station_untouched(self):
         self.add_station_show()
-        original = subwave.read_state_file
+        original = runsheet.read_state_file
 
         def stale(config, name):
             if name == "settings.json":
@@ -251,7 +251,7 @@ class OrderingTests(PruneTestCase):
                 return json.dumps(settings)
             return original(config, name)
 
-        subwave.read_state_file = stale
+        runsheet.read_state_file = stale
         code, output = self.apply()
         self.assertNotEqual(code, 0)
         self.assertIn("did NOT land", output)

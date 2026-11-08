@@ -16,9 +16,9 @@ import unittest
 from pathlib import Path
 
 import mock_station
-from test_subwave import load_tool
+from test_runsheet import load_tool
 
-subwave = load_tool()
+runsheet = load_tool()
 
 
 class FakeResult:
@@ -33,15 +33,15 @@ class OnboardingTestCase(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
-        self._saved_instance = subwave.INSTANCE_DIR
-        subwave.INSTANCE_DIR = self.tmp / "instance"
-        self.addCleanup(lambda: setattr(subwave, "INSTANCE_DIR", self._saved_instance))
+        self._saved_instance = runsheet.INSTANCE_DIR
+        runsheet.INSTANCE_DIR = self.tmp / "instance"
+        self.addCleanup(lambda: setattr(runsheet, "INSTANCE_DIR", self._saved_instance))
 
-        self._saved_ssh_run = subwave.ssh_run
-        self.addCleanup(lambda: setattr(subwave, "ssh_run", self._saved_ssh_run))
+        self._saved_ssh_run = runsheet.ssh_run
+        self.addCleanup(lambda: setattr(runsheet, "ssh_run", self._saved_ssh_run))
 
-        self._saved_http_json = subwave.http_json
-        self.addCleanup(lambda: setattr(subwave, "http_json", self._saved_http_json))
+        self._saved_http_json = runsheet.http_json
+        self.addCleanup(lambda: setattr(runsheet, "http_json", self._saved_http_json))
 
         self._saved_environ = dict(os.environ)
         self.addCleanup(self._restore_environ)
@@ -56,14 +56,14 @@ class OnboardingTestCase(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                code = subwave.main(list(args))
+                code = runsheet.main(list(args))
             except SystemExit as exc:
                 code = exc.code
         return code, out.getvalue() + err.getvalue()
 
     def offline_api(self):
         """status must not reach the network in these tests."""
-        subwave.http_json = lambda *a, **kw: (200, {
+        runsheet.http_json = lambda *a, **kw: (200, {
             "activeShow": None, "nowPlaying": {}, "listeners": {}, "streamOnline": True})
 
     def stub_ssh(self, *results):
@@ -75,18 +75,18 @@ class OnboardingTestCase(unittest.TestCase):
             calls.append(command)
             return queue[min(len(calls) - 1, len(queue) - 1)]
 
-        subwave.ssh_run = fake
+        runsheet.ssh_run = fake
         return calls
 
 
 class DiscoverStateDirsTests(OnboardingTestCase):
     def config(self, **values):
-        return subwave.Config(dotenv={}, environ=values)
+        return runsheet.Config(dotenv={}, environ=values)
 
     def test_found_lines_are_parsed(self):
         self.stub_ssh("FOUND sub-wave-controller /var/sub-wave\n")
         config = self.config(SUBWAVE_HOST="me@host", SUBWAVE_STATE_DIR="/var/sub-wave")
-        self.assertEqual(subwave.discover_state_dirs(config),
+        self.assertEqual(runsheet.discover_state_dirs(config),
                          ([("sub-wave-controller", "/var/sub-wave")], ""))
 
     def test_the_image_default_container_leads(self):
@@ -95,7 +95,7 @@ class DiscoverStateDirsTests(OnboardingTestCase):
         self.stub_ssh("FOUND subwave-old /srv/state\n"
                       "FOUND sub-wave-controller /var/sub-wave\n")
         config = self.config(SUBWAVE_HOST="me@host", SUBWAVE_STATE_DIR="/var/sub-wave")
-        found, note = subwave.discover_state_dirs(config)
+        found, note = runsheet.discover_state_dirs(config)
         self.assertEqual(found[0], ("sub-wave-controller", "/var/sub-wave"))
         self.assertEqual(len(found), 2)
 
@@ -104,13 +104,13 @@ class DiscoverStateDirsTests(OnboardingTestCase):
                       "FOUND sub-wave-controller /var/sub-wave\n"
                       "docker: command not found\n")
         config = self.config(SUBWAVE_HOST="me@host", SUBWAVE_STATE_DIR="/var/sub-wave")
-        self.assertEqual(subwave.discover_state_dirs(config),
+        self.assertEqual(runsheet.discover_state_dirs(config),
                          ([("sub-wave-controller", "/var/sub-wave")], ""))
 
     def test_an_unreachable_host_yields_nothing_rather_than_raising(self):
         self.stub_ssh(FakeResult("", "ssh: connect to host port 22: refused", 255))
         config = self.config(SUBWAVE_HOST="me@host", SUBWAVE_STATE_DIR="/var/sub-wave")
-        found, note = subwave.discover_state_dirs(config)
+        found, note = runsheet.discover_state_dirs(config)
         self.assertEqual(found, [])
         self.assertIn("connect to host", note, "an unreachable host must say why")
 
@@ -138,7 +138,7 @@ class StatusOnboardingTests(OnboardingTestCase):
         def refuse(*a, **kw):
             raise AssertionError("tier 1 with no SUBWAVE_HOST must not touch ssh")
 
-        subwave.ssh_run = refuse
+        runsheet.ssh_run = refuse
         code, output = self.run_cli("status")
 
         self.assertIn("set SUBWAVE_HOST=", output)

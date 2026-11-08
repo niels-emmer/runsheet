@@ -17,9 +17,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import mock_station
-from test_subwave import load_tool
+from test_runsheet import load_tool
 
-subwave = load_tool()
+runsheet = load_tool()
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "station.json"
 
 
@@ -40,54 +40,54 @@ class SkillsTestCase(unittest.TestCase):
             "SUBWAVE_ADMIN_PASS": "mock-pass",
         })
 
-        self._saved = (subwave.INSTANCE_DIR, subwave.SshStateSource,
-                       subwave.read_state_file, subwave.detect_tier,
-                       subwave.builtin_skill_slugs)
-        subwave.INSTANCE_DIR = self.tmp / "instance"
-        subwave.SshStateSource = lambda config: subwave.LocalStateSource(
+        self._saved = (runsheet.INSTANCE_DIR, runsheet.SshStateSource,
+                       runsheet.read_state_file, runsheet.detect_tier,
+                       runsheet.builtin_skill_slugs)
+        runsheet.INSTANCE_DIR = self.tmp / "instance"
+        runsheet.SshStateSource = lambda config: runsheet.LocalStateSource(
             self.server.state_dir)
-        subwave.read_state_file = lambda config, name: json.dumps(
+        runsheet.read_state_file = lambda config, name: json.dumps(
             self.server.station.settings if name == "settings.json"
             else self.server.station.schedule)
-        subwave.detect_tier = lambda config, probe=None: (2, "mock")
+        runsheet.detect_tier = lambda config, probe=None: (2, "mock")
         # the image's built-in list, without needing a container
-        subwave.builtin_skill_slugs = lambda config, state: {"curiosity"}
+        runsheet.builtin_skill_slugs = lambda config, state: {"curiosity"}
         self.addCleanup(self._restore)
 
         document = json.loads(FIXTURE.read_text(encoding="utf-8"))
-        model = subwave.build_live_model(document["settings"], document["schedule"])
-        subwave.write_instance(model, {}, capture={
+        model = runsheet.build_live_model(document["settings"], document["schedule"])
+        runsheet.write_instance(model, {}, capture={
             "tier": 2, "at": "2026-10-31T00:00:00Z", "lossy": False, "lost": []})
         blocklist = json.loads(json.dumps(self.server.station.blocklist))
-        subwave.assign_rule_slugs(blocklist["rules"], {})
-        subwave.write_json(subwave.INSTANCE_DIR / subwave.BLOCKLIST_FILE, blocklist)
+        runsheet.assign_rule_slugs(blocklist["rules"], {})
+        runsheet.write_json(runsheet.INSTANCE_DIR / runsheet.BLOCKLIST_FILE, blocklist)
         lock = {"version": 1, "rules": {}, "ids": {}}
         for rule in blocklist["rules"]:
             if rule.get("id"):
                 lock["rules"][rule["slug"]] = rule["id"]
                 lock["ids"][rule["id"]] = rule["slug"]
-        subwave.write_json(subwave.INSTANCE_DIR / subwave.BLOCKLIST_LOCK, lock)
+        runsheet.write_json(runsheet.INSTANCE_DIR / runsheet.BLOCKLIST_LOCK, lock)
 
     def _restore_environ(self):
         os.environ.clear()
         os.environ.update(self._saved_environ)
 
     def _restore(self):
-        (subwave.INSTANCE_DIR, subwave.SshStateSource, subwave.read_state_file,
-         subwave.detect_tier, subwave.builtin_skill_slugs) = self._saved
+        (runsheet.INSTANCE_DIR, runsheet.SshStateSource, runsheet.read_state_file,
+         runsheet.detect_tier, runsheet.builtin_skill_slugs) = self._saved
 
     # -- helpers -----------------------------------------------------------
     def run_cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                code = subwave.main(list(args))
+                code = runsheet.main(list(args))
             except SystemExit as exc:
                 code = exc.code
         return code, out.getvalue() + err.getvalue()
 
     def skill_path(self, slug):
-        return subwave.INSTANCE_DIR / "skills" / slug / "SKILL.md"
+        return runsheet.INSTANCE_DIR / "skills" / slug / "SKILL.md"
 
     def pull(self, *extra):
         return self.run_cli("pull", "--force", *extra)
@@ -102,7 +102,7 @@ class PullTests(SkillsTestCase):
         self.assertEqual(code, 0, output)
         self.assertTrue(self.skill_path("demo-skill").is_file())
 
-        data, body = subwave.parse_skill_md(self.skill_path("demo-skill").read_text())
+        data, body = runsheet.parse_skill_md(self.skill_path("demo-skill").read_text())
         self.assertEqual(data["name"], "demo-skill")
         self.assertEqual(data["cooldown"], "4h")
         self.assertIn("fictional segment", body)
@@ -293,7 +293,7 @@ class DiffTierTests(SkillsTestCase):
         self.assertIn("skills    1 unchanged, 0 changed, 0 added, 0 removed", output)
 
     def test_untouched_capture_diffs_clean_at_tier_1(self):
-        subwave.detect_tier = lambda config, probe=None: (1, "mock")
+        runsheet.detect_tier = lambda config, probe=None: (1, "mock")
         code, output = self.run_cli("pull", "--allow-lossy", "--force")
         self.assertEqual(code, 0, output)
         code, output = self.run_cli("diff")
@@ -324,7 +324,7 @@ class MoodValidationTests(SkillsTestCase):
         self.pull()
 
     def write_show(self, moods, genres=None):
-        path = subwave.INSTANCE_DIR / "character" / "shows" / "first-light.json"
+        path = runsheet.INSTANCE_DIR / "character" / "shows" / "first-light.json"
         document = json.loads(path.read_text())
         document["moods"] = moods
         if genres is not None:
@@ -346,7 +346,7 @@ class MoodValidationTests(SkillsTestCase):
         self.assertIn("0 warning(s)", output)
 
     def test_no_mood_check_without_station_access(self):
-        subwave.detect_tier = lambda config, probe=None: (1, "mock")
+        runsheet.detect_tier = lambda config, probe=None: (1, "mock")
         self.write_show(["nonexistent"])
         code, output = self.run_cli("validate")
         self.assertEqual(code, 0, output)
@@ -367,7 +367,7 @@ class CaptureSafetyTests(SkillsTestCase):
         self.assertEqual(self.pull()[0], 0)
         original = self.skill_path("demo-skill").read_text()
 
-        subwave.builtin_skill_slugs = lambda config, state: None
+        runsheet.builtin_skill_slugs = lambda config, state: None
         code, output = self.pull()
 
         self.assertEqual(code, 1)
@@ -376,24 +376,24 @@ class CaptureSafetyTests(SkillsTestCase):
                          "a failed pull must not remove an existing capture")
 
     def test_pull_skills_raises_rather_than_capturing_nothing(self):
-        subwave.builtin_skill_slugs = lambda config, state: None
-        with self.assertRaises(subwave.ToolError) as caught:
-            subwave.pull_skills(subwave.Config(dotenv={}, environ={}), 2)
+        runsheet.builtin_skill_slugs = lambda config, state: None
+        with self.assertRaises(runsheet.ToolError) as caught:
+            runsheet.pull_skills(runsheet.Config(dotenv={}, environ={}), 2)
         self.assertIn("built-in", str(caught.exception))
 
     def test_a_traversal_slug_is_never_written(self):
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            subwave.write_repo_skills(
+            runsheet.write_repo_skills(
                 {"../../evil": "---\nname: evil\n---\n\nbody\n",
                  "good-slug": "---\nname: good-slug\n---\n\nbody\n"},
-                root=subwave.INSTANCE_DIR)
+                root=runsheet.INSTANCE_DIR)
 
-        self.assertTrue((subwave.INSTANCE_DIR / "skills" / "good-slug" / "SKILL.md").is_file(),
+        self.assertTrue((runsheet.INSTANCE_DIR / "skills" / "good-slug" / "SKILL.md").is_file(),
                         "a valid slug is still captured")
         self.assertFalse((self.tmp / "evil").exists(),
                          "a station-supplied slug must not escape instance/skills")
-        self.assertTrue((subwave.INSTANCE_DIR / "skills").is_dir())
+        self.assertTrue((runsheet.INSTANCE_DIR / "skills").is_dir())
         self.assertIn("../../evil", buffer.getvalue(),
                       "a skipped slug is reported, not dropped silently")
 

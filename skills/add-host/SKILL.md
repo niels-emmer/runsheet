@@ -44,13 +44,13 @@ invisible on air, so this skill always finishes by assigning one.
 
 ## Preconditions
 
-1. **Announce the tier.** `python3 scripts/subwave.py status` prints it. Authoring needs a full
+1. **Announce the tier.** `python3 scripts/runsheet.py status` prints it. Authoring needs a full
    `instance/`, which only a tier-2 pull produces; at tier 1 the persona read is trimmed to 14 of 18
    fields, so a lossy capture is not an authoring base. If there is no full `instance/` and no host
    access, stop and ask for tier 2 — do not fill the missing fields with guesses.
-2. **Start from a synced repo.** `python3 scripts/subwave.py diff` must exit 0. If it reports drift,
+2. **Start from a synced repo.** `python3 scripts/runsheet.py diff` must exit 0. If it reports drift,
    pull first (tier 2, plain `pull`, no `--force`) and re-check.
-3. **Back up first** if the tier allows it: `python3 scripts/subwave.py backup` (see
+3. **Back up first** if the tier allows it: `python3 scripts/runsheet.py backup` (see
    [`backup`](../backup/SKILL.md)). At tier 1 say out loud that no backup is possible.
 4. **Check what is on air.** The station is live: a new host changes the next talk segment of any
    show it fronts. Prefer an off-air window, and never write mid-programme without saying so.
@@ -76,7 +76,7 @@ present it as done.
 ### 2. Scaffold the file
 
 ```sh
-python3 scripts/subwave.py character new-persona <slug> --name "<Name>"
+python3 scripts/runsheet.py character new-persona <slug> --name "<Name>"
 ```
 
 That writes all 18 fields, with `frequency: moderate`, `scriptLength: concise`, `djMode: true`,
@@ -91,7 +91,7 @@ The scaffolded soul is three TODO headings. Replace all of it with the brief, wr
 instructions to the model, in the second person** — that is what it is:
 
 ```sh
-python3 scripts/subwave.py character edit-persona <persona> --set soul="$(cat "${TMPDIR:-/tmp}/soul.txt")"
+python3 scripts/runsheet.py character edit-persona <persona> --set soul="$(cat "${TMPDIR:-/tmp}/soul.txt")"
 ```
 
 `--set soul=` takes the text verbatim, newlines included, so write the prose to a file first rather
@@ -141,7 +141,7 @@ Voice lives in two fields, both on the persona:
 - `voiceStyle` — free text describing delivery; the toolkit passes it through unchanged.
 
 ```sh
-python3 scripts/subwave.py character edit-persona <persona> \
+python3 scripts/runsheet.py character edit-persona <persona> \
   --set 'tts={"engine":"kokoro","cloudProvider":"","voice":"<voice id>","gainDb":0,"speed":1}'
 ```
 
@@ -160,8 +160,8 @@ A persona that hosts nothing never speaks. Two paths:
 **New show for this host** — `--persona` takes a **slug** and writes the persona's id for you:
 
 ```sh
-python3 scripts/subwave.py character new-show <show-slug> --name "<Show name>" --persona <persona>
-python3 scripts/subwave.py character add-to-grid <show-slug> --days fri --from 22 --to 24
+python3 scripts/runsheet.py character new-show <show-slug> --name "<Show name>" --persona <persona>
+python3 scripts/runsheet.py character add-to-grid <show-slug> --days fri --from 22 --to 24
 ```
 
 `add-to-grid` refuses to take cells that already hold another show until you pass `--replace`; read
@@ -173,7 +173,7 @@ slug**. Read the id from the persona file first:
 
 ```sh
 python3 -c "import json;print(json.load(open('instance/character/personas/<persona>.json'))['id'])"
-python3 scripts/subwave.py character edit-show <show-slug> --set personaId=<id>
+python3 scripts/runsheet.py character edit-show <show-slug> --set personaId=<id>
 ```
 
 Passing the slug here writes a slug into `personaId`, which `validate` does not cross-check — the
@@ -184,7 +184,7 @@ is one voice pretending to be two.
 ### 7. Validate
 
 ```sh
-python3 scripts/subwave.py validate
+python3 scripts/runsheet.py validate
 ```
 
 Errors block the write. Warnings do not, so read them rather than skimming the exit code.
@@ -192,7 +192,7 @@ Errors block the write. Warnings do not, so read them rather than skimming the e
 ### 8. Dry-run
 
 ```sh
-python3 scripts/subwave.py apply
+python3 scripts/runsheet.py apply
 ```
 
 `apply` dry-runs by default and sends nothing; `--dry-run` is accepted for emphasis. Check that the
@@ -205,7 +205,7 @@ Show the human: the soul, the dials with their one-line justifications, the voic
 cells the host now fronts, and the dry-run summary. Ask for an explicit yes. Only then:
 
 ```sh
-python3 scripts/subwave.py apply --yes
+python3 scripts/runsheet.py apply --yes
 ```
 
 **A refusal here is the guard working, not a bug to route around.** `apply` refuses a lossy capture,
@@ -216,8 +216,8 @@ work around one.
 ## Verify
 
 ```sh
-python3 scripts/subwave.py status    # persona count +1, on air state, grid filled
-python3 scripts/subwave.py diff      # exit 0: repo and live agree
+python3 scripts/runsheet.py status    # persona count +1, on air state, grid filled
+python3 scripts/runsheet.py diff      # exit 0: repo and live agree
 ```
 
 Then confirm the two things that actually make a host audible:

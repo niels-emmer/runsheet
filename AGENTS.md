@@ -1,4 +1,6 @@
-# AGENTS.md — SUB/WAVE toolkit
+# AGENTS.md — runsheet
+
+This tool is called **runsheet**; what it manages is a **SUB/WAVE** station.
 
 A toolkit for running a **SUB/WAVE** radio station from an agent session: author the station's
 character (personas, shows, schedule, house rules), read what is actually live, and push reviewed
@@ -170,20 +172,20 @@ sh scripts/check-secrets.sh          # commit gate: tracked files
 sh scripts/check-secrets.sh --all    # also untracked-but-not-ignored
 python3 -m unittest discover -s tests  # offline: the mock station is in-process
 
-python3 scripts/subwave.py status    # tier, station, on-air state, repo sync
-python3 scripts/subwave.py pull      # live -> instance/, secrets redacted (--force replaces)
-python3 scripts/subwave.py diff      # drift vs live, exit 1 when drifted
-python3 scripts/subwave.py backup    # config + assets, outside the repo
-python3 scripts/subwave.py restore <dir>  # put a backup back (dry run; --yes writes)
-python3 scripts/subwave.py validate  # check instance/ before applying (--dir DIR for any station)
-python3 scripts/subwave.py blocklist list|block|unblock|rm|rule   # author locally (no network)
-python3 scripts/subwave.py skills list|new|show|edit|rm           # station skills (no network)
-python3 scripts/subwave.py onair tools|now|state|list              # read the station over MCP
-python3 scripts/subwave.py onair say|segment|skip|request|queue|sfx|jingle --yes   # ephemeral, needs --yes
-python3 scripts/subwave.py character init --from demo   # scaffold a character layer (no network)
-python3 scripts/subwave.py character new-persona|new-show|add-to-grid   # author personas, shows, grid
-python3 scripts/subwave.py character edit-persona|edit-show <slug> --set FIELD=VALUE  # change named fields only
-python3 scripts/subwave.py apply     # DRY RUN by default; --yes performs the writes
+python3 scripts/runsheet.py status    # tier, station, on-air state, repo sync
+python3 scripts/runsheet.py pull      # live -> instance/, secrets redacted (--force replaces)
+python3 scripts/runsheet.py diff      # drift vs live, exit 1 when drifted
+python3 scripts/runsheet.py backup    # config + assets, outside the repo
+python3 scripts/runsheet.py restore <dir>  # put a backup back (dry run; --yes writes)
+python3 scripts/runsheet.py validate  # check instance/ before applying (--dir DIR for any station)
+python3 scripts/runsheet.py blocklist list|block|unblock|rm|rule   # author locally (no network)
+python3 scripts/runsheet.py skills list|new|show|edit|rm           # station skills (no network)
+python3 scripts/runsheet.py onair tools|now|state|list              # read the station over MCP
+python3 scripts/runsheet.py onair say|segment|skip|request|queue|sfx|jingle --yes   # ephemeral, needs --yes
+python3 scripts/runsheet.py character init --from demo   # scaffold a character layer (no network)
+python3 scripts/runsheet.py character new-persona|new-show|add-to-grid   # author personas, shows, grid
+python3 scripts/runsheet.py character edit-persona|edit-show <slug> --set FIELD=VALUE  # change named fields only
+python3 scripts/runsheet.py apply     # DRY RUN by default; --yes performs the writes
 ```
 
 ## Which procedure to load

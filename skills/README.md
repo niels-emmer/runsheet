@@ -31,4 +31,4 @@ helped. `AGENTS.md` carries the routing rule and the tier announcement every ski
 
 Copy the section order: when to use, done-when, preconditions (tier, backup), numbered procedure
 with the exact commands, verification, failure modes. Keep it verifiable: if a flag is not in
-`scripts/subwave.py --help` or `AGENTS.md`, it does not go in the skill — say it is planned.
+`scripts/runsheet.py --help` or `AGENTS.md`, it does not go in the skill — say it is planned.

@@ -846,8 +846,8 @@ def _sync_line(config, tier, settings, schedule):
         if tier == 1:
             # A tier-1 pull of a live station is lossy and cannot be applied, so
             # pointing a newcomer at it is the dead end this line used to be.
-            return "no instance/ yet - tier 1 authors: subwave.py character init"
-        return "no instance/ captured yet (run: subwave.py pull)"
+            return "no instance/ yet - tier 1 authors: runsheet.py character init"
+        return "no instance/ captured yet (run: runsheet.py pull)"
     if tier != 2 or settings is None:
         return "cannot compare at tier 1 (trimmed reads)"
     try:
@@ -858,7 +858,7 @@ def _sync_line(config, tier, settings, schedule):
         return "cannot compare instance/: %s" % exc
     if count == 0:
         return "in sync with instance/"
-    return "%d change(s) vs instance/ (run: subwave.py diff)" % count
+    return "%d change(s) vs instance/ (run: runsheet.py diff)" % count
 
 
 # --------------------------------------------------------------------------
@@ -1198,7 +1198,7 @@ def cmd_diff(config, args):
     print("tier      %s" % TIER_LABEL[tier], flush=True)
 
     if not (INSTANCE_DIR / "ids.lock.json").is_file():
-        raise ToolError("no instance/ to compare (run: subwave.py pull)")
+        raise ToolError("no instance/ to compare (run: runsheet.py pull)")
 
     repo = load_instance_model()
     if tier != 2:
@@ -2272,7 +2272,7 @@ def cmd_apply(config, args):
 
     lock_path = INSTANCE_DIR / "ids.lock.json"
     if not lock_path.is_file():
-        raise ToolError("no instance/ to apply (run: subwave.py pull)")
+        raise ToolError("no instance/ to apply (run: runsheet.py pull)")
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
 
     capture = lock.get("capture") or {}
@@ -2287,11 +2287,11 @@ def cmd_apply(config, args):
     report = validate_instance(None, station_moods=station_mood_names(config)
                                if tier == 2 else None)
     if report["unreadable"]:
-        raise ToolError("cannot apply: instance/ is unreadable (%s). Run: subwave.py validate"
+        raise ToolError("cannot apply: instance/ is unreadable (%s). Run: runsheet.py validate"
                         % "; ".join(report["unreadable"]))
     if report["errors"]:
         raise ToolError(
-            "refusing to apply: validate found %d error(s), first: %s. Run: subwave.py validate"
+            "refusing to apply: validate found %d error(s), first: %s. Run: runsheet.py validate"
             % (len(report["errors"]), report["errors"][0]))
 
     model = load_instance_model()
@@ -2964,7 +2964,7 @@ def _save_lock(root, lock):
 
 def _require_character(root):
     if not (root / "character").is_dir():
-        raise ToolError("no character layer at %s - run: subwave.py character init" % (root / "character"))
+        raise ToolError("no character layer at %s - run: runsheet.py character init" % (root / "character"))
 
 
 def _slugs(root, kind):
@@ -3137,7 +3137,7 @@ def edit_entity(root, kind, args):
               % (field, _short(before) if present else "(absent)", _short(value)))
     print("kept      id %s, slug %s, %d other field(s) unchanged"
           % (document.get("id") or "(none)", args.slug, len(document) - len(changes)))
-    print("next      subwave.py validate && subwave.py apply --dry-run")
+    print("next      runsheet.py validate && runsheet.py apply --dry-run")
     return EXIT_OK
 
 
@@ -3254,7 +3254,7 @@ def cmd_character(config, args):
                 "capture": authored_capture(),
             })
             print("init      wrote a blank character (%s, %s)" % (persona_slug, show_slug))
-        print("next      subwave.py validate")
+        print("next      runsheet.py validate")
         return EXIT_OK
 
     _require_character(root)
@@ -3273,7 +3273,7 @@ def cmd_character(config, args):
         print("persona   %s -> %s" % (slug, persona["id"]))
         print("note      placeholder id: personas are sent inside the settings array, which the "
               "station stores as given, so this id is preserved")
-        print("next      fill in soul, then: subwave.py validate")
+        print("next      fill in soul, then: runsheet.py validate")
         return EXIT_OK
 
     if action == "new-show":
@@ -3302,7 +3302,7 @@ def cmd_character(config, args):
         print("note      placeholder id: it is dropped on apply, and POST /api/shows assigns a "
               "real one")
         print("note      no grid entry yet; use: character add-to-grid %s --days ..." % slug)
-        print("next      fill in topic/genres/moods, then: subwave.py validate")
+        print("next      fill in topic/genres/moods, then: runsheet.py validate")
         return EXIT_OK
 
     if action == "add-to-grid":
@@ -3588,7 +3588,7 @@ def cmd_restore(config, args):
                         "back. Nothing was left half-written." % problem)
 
     print("result    %d file(s) restored and verified" % len(targets))
-    print("next      restart the mixer, then: subwave.py status")
+    print("next      restart the mixer, then: runsheet.py status")
     return EXIT_OK
 
 
@@ -3662,7 +3662,7 @@ def cmd_blocklist(config, args):
     """Authoring is local only: this never touches the network."""
     root = INSTANCE_DIR
     if not (root / "character").is_dir() and not (root / BLOCKLIST_FILE).is_file():
-        raise ToolError("no instance/ to author (run: subwave.py pull, or character init)")
+        raise ToolError("no instance/ to author (run: runsheet.py pull, or character init)")
     document = load_repo_blocklist(root)
     action = args.blocklist_command
 
@@ -4044,7 +4044,7 @@ def cmd_skills(config, args):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(render_skill_md(data, body), encoding="utf-8")
         print("skill     created %s" % slug)
-        print("next      fill in the prompt, then: subwave.py validate")
+        print("next      fill in the prompt, then: runsheet.py validate")
         return EXIT_OK
 
     if action == "edit":
@@ -4058,7 +4058,7 @@ def cmd_skills(config, args):
             raise ToolError(
                 "refusing to edit skills/%s: its SKILL.md frontmatter does not parse, so the "
                 "rewrite would replace the prompt with an empty one. Fix the file first "
-                "(run: subwave.py validate)." % args.slug)
+                "(run: runsheet.py validate)." % args.slug)
         data = dict(entry.get("data") or {})
         body = entry.get("body") or ""
         if args.label is not None:
@@ -4158,7 +4158,7 @@ class McpClient:
         if self.session is not None:
             return
         self._rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                                 "clientInfo": {"name": "subwave-toolkit", "version": "1"}})
+                                 "clientInfo": {"name": "runsheet", "version": "1"}})
 
     def tools(self):
         self.initialize()
@@ -4384,7 +4384,7 @@ def _onair_call(args):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        prog="subwave.py",
+        prog="runsheet.py",
         description="Operate a SUB/WAVE station from an agent session: author, review, back up, apply.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -4609,10 +4609,10 @@ def main(argv=None):
     try:
         return args.func(config, args)
     except ConfigError as exc:
-        print("subwave: %s" % exc, file=sys.stderr)
+        print("runsheet: %s" % exc, file=sys.stderr)
         return EXIT_CONFIG
     except ToolError as exc:
-        print("subwave: %s" % exc, file=sys.stderr)
+        print("runsheet: %s" % exc, file=sys.stderr)
         return EXIT_ERROR
 
 

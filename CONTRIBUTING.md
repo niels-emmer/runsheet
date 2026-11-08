@@ -16,7 +16,7 @@ runtime dependency beyond the standard library.
 ```bash
 git config core.hooksPath .githooks     # once per clone: enables the pre-commit secret gate
 cp .env.example .env                   # only if you want to run against a real station
-python3 scripts/subwave.py --help
+python3 scripts/runsheet.py --help
 ```
 
 You do not need a station to work on this. `tests/mock_station.py` starts a mock SUB/WAVE
@@ -24,8 +24,8 @@ controller in-process on loopback, and `examples/demo/` is a committed fictional
 the shape a real `instance/` has:
 
 ```bash
-python3 scripts/subwave.py character init --from demo   # writes examples/demo into instance/
-python3 scripts/subwave.py validate --dir examples/demo
+python3 scripts/runsheet.py character init --from demo   # writes examples/demo into instance/
+python3 scripts/runsheet.py validate --dir examples/demo
 ```
 
 ## Checks
@@ -35,7 +35,7 @@ Run before opening a pull request. CI runs the same three, on `ubuntu-24.04`:
 ```bash
 python3 -m unittest discover -s tests   # the whole suite, offline
 sh scripts/check-secrets.sh             # tracked files (the commit gate)
-python3 scripts/subwave.py validate --dir examples/demo
+python3 scripts/runsheet.py validate --dir examples/demo
 ```
 
 `sh scripts/check-secrets.sh --all` also scans untracked-but-not-ignored files; run it if you

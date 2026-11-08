@@ -18,9 +18,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import mock_station
-from test_subwave import load_tool
+from test_runsheet import load_tool
 
-subwave = load_tool()
+runsheet = load_tool()
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "station.json"
 
 
@@ -41,22 +41,22 @@ class OnAirTestCase(unittest.TestCase):
             "SUBWAVE_ADMIN_PASS": "mock-pass",
         })
 
-        self._saved = (subwave.INSTANCE_DIR, subwave.SshStateSource,
-                       subwave.read_state_file, subwave.detect_tier,
-                       subwave.builtin_skill_slugs)
-        subwave.INSTANCE_DIR = self.tmp / "instance"
-        subwave.SshStateSource = lambda config: subwave.LocalStateSource(
+        self._saved = (runsheet.INSTANCE_DIR, runsheet.SshStateSource,
+                       runsheet.read_state_file, runsheet.detect_tier,
+                       runsheet.builtin_skill_slugs)
+        runsheet.INSTANCE_DIR = self.tmp / "instance"
+        runsheet.SshStateSource = lambda config: runsheet.LocalStateSource(
             self.server.state_dir)
-        subwave.read_state_file = lambda config, name: json.dumps(
+        runsheet.read_state_file = lambda config, name: json.dumps(
             self.server.station.settings if name == "settings.json"
             else self.server.station.schedule)
-        subwave.detect_tier = lambda config, probe=None: (2, "mock")
-        subwave.builtin_skill_slugs = lambda config, state: {"curiosity"}
+        runsheet.detect_tier = lambda config, probe=None: (2, "mock")
+        runsheet.builtin_skill_slugs = lambda config, state: {"curiosity"}
         self.addCleanup(self._restore)
 
         document = json.loads(FIXTURE.read_text(encoding="utf-8"))
-        model = subwave.build_live_model(document["settings"], document["schedule"])
-        subwave.write_instance(model, {}, capture={
+        model = runsheet.build_live_model(document["settings"], document["schedule"])
+        runsheet.write_instance(model, {}, capture={
             "tier": 2, "at": "2026-10-31T00:00:00Z", "lossy": False, "lost": []})
 
     def _restore_environ(self):
@@ -64,15 +64,15 @@ class OnAirTestCase(unittest.TestCase):
         os.environ.update(self._saved_environ)
 
     def _restore(self):
-        (subwave.INSTANCE_DIR, subwave.SshStateSource, subwave.read_state_file,
-         subwave.detect_tier, subwave.builtin_skill_slugs) = self._saved
+        (runsheet.INSTANCE_DIR, runsheet.SshStateSource, runsheet.read_state_file,
+         runsheet.detect_tier, runsheet.builtin_skill_slugs) = self._saved
 
     # -- helpers -----------------------------------------------------------
     def run_cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                code = subwave.main(list(args))
+                code = runsheet.main(list(args))
             except SystemExit as exc:
                 code = exc.code
         return code, out.getvalue() + err.getvalue()
@@ -220,10 +220,10 @@ class BoundaryTests(OnAirTestCase):
 
     def test_onair_writes_nothing_into_instance(self):
         before = {path: path.stat().st_mtime
-                  for path in subwave.INSTANCE_DIR.rglob("*") if path.is_file()}
+                  for path in runsheet.INSTANCE_DIR.rglob("*") if path.is_file()}
         self.run_cli("onair", "say", "hello", "--yes")
         after = {path: path.stat().st_mtime
-                 for path in subwave.INSTANCE_DIR.rglob("*") if path.is_file()}
+                 for path in runsheet.INSTANCE_DIR.rglob("*") if path.is_file()}
         self.assertEqual(before, after, "on-air control never writes to the repo")
 
 
@@ -245,11 +245,11 @@ class UnparseableResultTests(unittest.TestCase):
         args = type("Args", (), {"text": "midnight", "pick": None, "yes": True})()
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            subwave._onair_queue(self.Client(text), args)
+            runsheet._onair_queue(self.Client(text), args)
         return buffer.getvalue()
 
     def test_an_unparseable_search_reply_is_a_parse_error(self):
-        with self.assertRaises(subwave.ToolError) as caught:
+        with self.assertRaises(runsheet.ToolError) as caught:
             self.queue("<html>502 Bad Gateway</html>")
 
         message = str(caught.exception)
@@ -259,7 +259,7 @@ class UnparseableResultTests(unittest.TestCase):
         self.assertNotIn("returned no tracks", message)
 
     def test_a_genuinely_empty_search_still_says_no_tracks(self):
-        with self.assertRaises(subwave.ToolError) as caught:
+        with self.assertRaises(runsheet.ToolError) as caught:
             self.queue(json.dumps({"tracks": []}))
         self.assertIn("returned no tracks", str(caught.exception))
 

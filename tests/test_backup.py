@@ -15,9 +15,9 @@ import unittest
 from pathlib import Path
 
 import mock_station
-from test_subwave import load_tool
+from test_runsheet import load_tool
 
-subwave = load_tool()
+runsheet = load_tool()
 
 
 class BackupTestCase(unittest.TestCase):
@@ -28,18 +28,18 @@ class BackupTestCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
         # Drive the real CLI path, but read the mock's state dir instead of ssh.
-        self._saved_source = subwave.SshStateSource
-        self._saved_tier = subwave.detect_tier
-        subwave.SshStateSource = lambda config: subwave.LocalStateSource(self.server.state_dir)
-        subwave.detect_tier = lambda config, probe=None: (2, "mock state dir")
+        self._saved_source = runsheet.SshStateSource
+        self._saved_tier = runsheet.detect_tier
+        runsheet.SshStateSource = lambda config: runsheet.LocalStateSource(self.server.state_dir)
+        runsheet.detect_tier = lambda config, probe=None: (2, "mock state dir")
         self.addCleanup(self._restore)
 
     def _restore(self):
-        subwave.SshStateSource = self._saved_source
-        subwave.detect_tier = self._saved_tier
+        runsheet.SshStateSource = self._saved_source
+        runsheet.detect_tier = self._saved_tier
 
     def config(self):
-        return subwave.Config(dotenv={}, environ={
+        return runsheet.Config(dotenv={}, environ={
             "SUBWAVE_BASE_URL": self.server.url,
             "SUBWAVE_ADMIN_USER": "mock-admin",
             "SUBWAVE_ADMIN_PASS": "mock-pass",
@@ -52,7 +52,7 @@ class BackupTestCase(unittest.TestCase):
         destination = self.tmp / "backups"
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            code = subwave.cmd_backup(
+            code = runsheet.cmd_backup(
                 self.config(),
                 type("Args", (), {"dir": str(destination),
                                   "with_library": "--with-library" in args})())
@@ -180,10 +180,10 @@ class PermissionTests(BackupTestCase):
 class TierTests(BackupTestCase):
     def test_tier_1_refuses_with_the_reason(self):
         self._restore()
-        config = subwave.Config(dotenv={}, environ={"SUBWAVE_BASE_URL": self.server.url})
-        with self.assertRaises(subwave.ToolError) as caught:
+        config = runsheet.Config(dotenv={}, environ={"SUBWAVE_BASE_URL": self.server.url})
+        with self.assertRaises(runsheet.ToolError) as caught:
             with contextlib.redirect_stdout(io.StringIO()):
-                subwave.cmd_backup(config, type("Args", (), {"dir": str(self.tmp),
+                runsheet.cmd_backup(config, type("Args", (), {"dir": str(self.tmp),
                                                              "with_library": False})())
         self.assertIn("schedule", str(caught.exception))
 

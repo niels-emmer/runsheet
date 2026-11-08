@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Validate the committed demo station
-        run: python3 scripts/subwave.py validate --dir examples/demo
+        run: python3 scripts/runsheet.py validate --dir examples/demo
 
 # Tests must never require a live station. The suite runs offline: no network,
 # no ssh, and the mock station (tests/mock_station.py) is started in-process on

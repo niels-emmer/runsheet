@@ -27,11 +27,11 @@ once it *is* out there.
 Re-verify the settings that matter:
 
 ```sh
-gh repo view niels-emmer/subwave-marvin --json visibility,isSecurityPolicyEnabled
-gh api repos/niels-emmer/subwave-marvin/community/profile --jq .health_percentage
-gh api repos/niels-emmer/subwave-marvin/branches/main/protection \
+gh repo view niels-emmer/runsheet --json visibility,isSecurityPolicyEnabled
+gh api repos/niels-emmer/runsheet/community/profile --jq .health_percentage
+gh api repos/niels-emmer/runsheet/branches/main/protection \
   --jq .required_status_checks.contexts
-gh api repos/niels-emmer/subwave-marvin \
+gh api repos/niels-emmer/runsheet \
   --jq '.security_and_analysis | {secret_scanning: .secret_scanning.status,
         push_protection: .secret_scanning_push_protection.status}'
 ```
@@ -50,7 +50,7 @@ git grep -nIE '([0-9]{1,3}\.){3}[0-9]{1,3}|SUBWAVE_(HOST|BASE_URL|STATE_DIR)=.+|
 ```
 
 Expected output is four lines: the loopback address in the `.env.example` comment, plus three placeholder
-`SUBWAVE_HOST=` / `SUBWAVE_STATE_DIR=` lines in `CHANGELOG.md` and `scripts/subwave.py` (the discovery
+`SUBWAVE_HOST=` / `SUBWAVE_STATE_DIR=` lines in `CHANGELOG.md` and `scripts/runsheet.py` (the discovery
 messages). Anything else — a hostname, an ssh alias, a routable IP, or a non-empty deployment value — is a
 finding.
 
@@ -120,7 +120,7 @@ The clone URL resolves publicly, every relative link (`AGENTS.md`, `docs/PLAN.md
 public. Every command it names is real:
 
 ```sh
-python3 scripts/subwave.py --help
+python3 scripts/runsheet.py --help
 ```
 
 The commands are `status`, `pull`, `diff`, `validate`, `apply`, `backup`, `restore`, `character`,

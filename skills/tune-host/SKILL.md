@@ -42,13 +42,13 @@ changes at once and no idea which one helped. Not for creating a host
 
 ## Preconditions
 
-1. **Announce the tier.** `python3 scripts/subwave.py status` prints it, along with what is on air
+1. **Announce the tier.** `python3 scripts/runsheet.py status` prints it, along with what is on air
    and whether the repo has drifted. A drifted repo means the dials you are about to edit are not
    what is playing: pull first (tier 2) or say the change is against the repo, not the station.
 2. **A full-fidelity `instance/`.** At tier 1 `/api/schedule` trims shows to 7 of 26 fields, so
    `banter`, `pauseTalk`, `segmentSkill` and `preparationSkill` are invisible. At that tier you may
    tune persona dials, but you must refuse to name or edit a show-level cause.
-3. **Back up first** if the tier allows: `python3 scripts/subwave.py backup` (see
+3. **Back up first** if the tier allows: `python3 scripts/runsheet.py backup` (see
    [`backup`](../backup/SKILL.md)). At tier 1 say out loud that no backup is possible.
 4. **Know which persona.** If the human named a show, resolve it to its `personaId` first.
 5. **Check what is on air.** The change alters the next talk segment of every show the host fronts;
@@ -118,13 +118,13 @@ persona" is a much bigger sentence than it sounds.
 Persona dial:
 
 ```sh
-python3 scripts/subwave.py character edit-persona <persona> --set warmth=7
+python3 scripts/runsheet.py character edit-persona <persona> --set warmth=7
 ```
 
 Show setting:
 
 ```sh
-python3 scripts/subwave.py character edit-show <show> --set pauseTalk=false
+python3 scripts/runsheet.py character edit-show <show> --set pauseTalk=false
 ```
 
 `--set` is repeatable, but **run one field per apply** so the effect is attributable — unless the
@@ -157,13 +157,13 @@ written, exactly as [`add-host`](../add-host/SKILL.md) step 3 requires.
 ### 6. Validate
 
 ```sh
-python3 scripts/subwave.py validate
+python3 scripts/runsheet.py validate
 ```
 
 ### 7. Dry-run
 
 ```sh
-python3 scripts/subwave.py apply
+python3 scripts/runsheet.py apply
 ```
 
 `apply` dry-runs by default and sends nothing; `--dry-run` is accepted for emphasis. Confirm the step
@@ -176,7 +176,7 @@ Show the human: the field, the before → after, the scope (which shows it touch
 will notice, and what will **not** change. Ask for an explicit yes. Only then:
 
 ```sh
-python3 scripts/subwave.py apply --yes
+python3 scripts/runsheet.py apply --yes
 ```
 
 **A refusal here is the guard working, not a bug to route around.** `apply` refuses a lossy capture,
@@ -186,8 +186,8 @@ tier-1 write without `--no-backup`. Report the exact refusal and let the human d
 ## Verify
 
 ```sh
-python3 scripts/subwave.py diff      # exit 0: the change is live, not just in the repo
-python3 scripts/subwave.py status    # same show on air, persona unchanged elsewhere
+python3 scripts/runsheet.py diff      # exit 0: the change is live, not just in the repo
+python3 scripts/runsheet.py status    # same show on air, persona unchanged elsewhere
 ```
 
 Then listen, deliberately:

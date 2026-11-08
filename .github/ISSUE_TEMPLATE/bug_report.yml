@@ -8,7 +8,7 @@ body:
         Thanks for taking the time to report a bug. Please **do not include secrets, your
         station's credentials, hostnames, or instance data** in this issue — redact them
         first. Security problems belong in a
-        [private report](https://github.com/niels-emmer/subwave-marvin/security/advisories/new),
+        [private report](https://github.com/niels-emmer/runsheet/security/advisories/new),
         not here.
 
   - type: textarea
@@ -32,7 +32,7 @@ body:
       label: Steps to reproduce
       description: Include the exact command, and the tier it reported.
       placeholder: |
-        1. `python3 scripts/subwave.py diff`
+        1. `python3 scripts/runsheet.py diff`
         2. ...
     validations:
       required: true
