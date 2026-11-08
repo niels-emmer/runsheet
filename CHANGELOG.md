@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **A read-only MCP server for the toolkit itself.** `python3 scripts/runsheet.py mcp-server` speaks MCP
+  (JSON-RPC over stdio, stdlib only) and exposes exactly three tools — `runsheet_status`, `runsheet_diff`
+  and `runsheet_validate` — each a thin wrapper around the existing command, so an MCP-native agent no
+  longer has to shell out and parse text for a trivial read. Every tool is annotated `readOnlyHint: true`.
+  There is deliberately no write tool: `apply`, `character`, `blocklist`, `skills`, `backup`, `restore` and
+  `onair` stay CLI-only, because a config change needs a diff, a dry run and an explicit `--yes` — none of
+  which a `tools/call` provides. This is the same reasoning as the station's control-only `/api/mcp`, but a
+  separate server for a different surface; see `AGENTS.md`. Pinned by
+  [`tests/test_mcp_server.py`](tests/test_mcp_server.py), which also asserts the tools only ever GET.
 - **`capabilities` says what the current tier can do, without attempting it.** A new read-only
   subcommand reuses `status`'s tier detection and reports, for every top-level verb (`pull`, `diff`,
   `backup`, `restore`, `apply`, `apply --prune`, `character`, `skills`, `blocklist`, `onair`), whether

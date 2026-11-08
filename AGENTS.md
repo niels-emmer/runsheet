@@ -94,6 +94,21 @@ the admin Basic pair. It is the right answer for "what's on air" and "skip this 
 of the guarantees this repo exists for — no diff, no dry run, no backup, no read-back, no `--yes`, no undo —
 so never present it as a way to change configuration.
 
+## The toolkit's own MCP server is read-only — settled
+
+Separate from the station's server above, this repository has its own MCP server for agents that treat
+tool calls as their interface: `python3 scripts/runsheet.py mcp-server` (JSON-RPC over stdio, stdlib only).
+It exposes **exactly three tools** — `runsheet_status`, `runsheet_diff`, `runsheet_validate` — each a thin
+wrapper that calls the existing `cmd_*` function and returns its output verbatim; they cannot drift from
+the CLI because they are the CLI. Every tool is annotated `readOnlyHint: true`.
+
+**No writer will ever be added here, and that is the same D3 reasoning applied to this tool.** `apply`,
+`character`, `blocklist`, `skills`, `backup`, `restore` and `onair` stay CLI-only. A config change needs a
+diff, a dry run and an explicit human confirmation; a `tools/call` has none of them — the client sees a
+name, a schema and a result, and a model may chain the call unprompted. A writer behind `tools/call` would
+delete the `--yes` gate and the tier-2-only guards. If a task asks for a fourth tool, the answer is no.
+This server does not replace `onair`: it never talks to the station's `/api/mcp`.
+
 ## A backup does not contain the schedule
 
 `GET /api/backup/export` is a ~95 MB zip holding `settings.json`, `library.db`, skills, sfx, jingles,
@@ -183,6 +198,7 @@ python3 scripts/runsheet.py capabilities [--json]  # what this tier can do, with
 python3 scripts/runsheet.py --mock status   # any station command against the in-process mock (no network)
 python3 scripts/runsheet.py pull      # live -> instance/, secrets redacted (--force replaces)
 python3 scripts/runsheet.py diff      # drift vs live, exit 1 when drifted
+python3 scripts/runsheet.py mcp-server  # read-only MCP over stdio: status, diff, validate only
 python3 scripts/runsheet.py backup    # config + assets, outside the repo
 python3 scripts/runsheet.py restore <dir>  # put a backup back (dry run; --yes writes)
 python3 scripts/runsheet.py validate  # check instance/ before applying (--dir DIR for any station)
