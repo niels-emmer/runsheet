@@ -37,12 +37,20 @@ def tracked_files():
 
 
 def fresh_clone(destination):
-    """Copy exactly the tracked files: no instance/, no .env, no untracked work."""
+    """Copy exactly the tracked files: no instance/, no .env, no untracked work.
+
+    Tracked symlinks (the skill discovery links) are recreated as symlinks, as a
+    checkout gives them: copying through them would bake this machine's target
+    into the fixture, and a directory symlink cannot be copied as a file at all.
+    """
     for name in tracked_files():
         source = ROOT / name
         target = destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
+        if source.is_symlink():
+            os.symlink(os.readlink(source), target)
+        else:
+            shutil.copy2(source, target)
     return destination
 
 

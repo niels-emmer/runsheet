@@ -10,10 +10,26 @@ These are agent-agnostic in format and in content: a YAML header with a `descrip
 agent matches on, and nothing here names a station, host, persona or show — the operator's own data stays
 in gitignored `instance/`, referred to as `<slug>` and `<persona>`.
 
-**The path is not one any agent scans automatically.** Claude Code reads `.claude/skills/`, OpenCode reads
-`.opencode/skills/`, and Codex has no skills directory at all. So discovery runs through `AGENTS.md`: its
-"Which procedure to load" table is the trigger surface, and it points here. Add a skill there, or it is
-findable only by an agent that happens to list this directory.
+**A skill is written once, here.** Each loader scans a directory of its own, so each of the five appears in
+two tool-owned directories as a **relative symlink** back to this one:
+
+- `.claude/skills/<name>/SKILL.md` → `../../../skills/<name>/SKILL.md` — Claude Code's project path.
+- `.agents/skills/<name>` → `../../skills/<name>` — the skill's **folder**, not the file, which is the form
+  Codex's docs describe following; it scans `.agents/skills` from the working directory up to the repo root.
+
+OpenCode reads both of those as project *compatibility* sources, so two directories cover all three agents.
+The repo deliberately does not also link them into `.opencode/skills`: OpenCode would then register every id
+a third time from the same file, and its docs say to avoid duplicate IDs.
+
+Git records these as symlinks (mode `120000`), not file copies, and a relative target resolves from any
+checkout — a plain clone or a linked git worktree — so there is still exactly one `SKILL.md` to edit and
+nothing to keep in sync. `tests/test_skill_discovery.py` enforces that rather than asserting it: every tracked
+`skills/<name>/SKILL.md` must have both links, in symlink mode, with the exact relative target and a row in
+`AGENTS.md`, and a link with no skill behind it fails too.
+
+`AGENTS.md`'s "Which procedure to load" table stays the routing surface for an agent whose loader is neither
+of those directories, and for all of them it carries the verb-decides rule and the tier announcement, which
+native discovery does not.
 
 ## The five
 
@@ -32,3 +48,8 @@ helped. `AGENTS.md` carries the routing rule and the tier announcement every ski
 Copy the section order: when to use, done-when, preconditions (tier, backup), numbered procedure
 with the exact commands, verification, failure modes. Keep it verifiable: if a flag is not in
 `scripts/runsheet.py --help` or `AGENTS.md`, it does not go in the skill — say it is planned.
+
+Then wire up discovery, or the skill is invisible to every agent: create `.claude/skills/<name>/` holding a
+`SKILL.md` symlink to `../../../skills/<name>/SKILL.md`, create `.agents/skills/<name>` as a **folder** symlink
+to `../../skills/<name>`, and add a row to the `AGENTS.md` table. `tests/test_skill_discovery.py` fails until
+all three exist.
