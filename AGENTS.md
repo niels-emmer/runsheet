@@ -222,7 +222,7 @@ python3 scripts/runsheet.py character init --from demo   # scaffold a character 
 python3 scripts/runsheet.py character new-persona|new-show|add-to-grid   # author personas, shows, grid
 python3 scripts/runsheet.py character edit-persona|edit-show <slug> --set FIELD=VALUE  # change named fields only
 python3 scripts/runsheet.py apply     # DRY RUN by default; --yes performs the writes
-docker run --rm -v "$PWD:/repo" ghcr.io/niels-emmer/runsheet:1.0.0 status   # a host with no python3
+docker run --rm -v "$PWD:/repo" ghcr.io/niels-emmer/runsheet:1.1.0 status   # a host with no python3
 ```
 
 The image is a runtime, not an install: it carries `python3`, `ssh` and `git` and contains no checkout

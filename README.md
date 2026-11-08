@@ -44,8 +44,11 @@ code that runs is whatever your checkout holds.
 ```sh
 docker run --rm -v "$PWD:/repo" \
     --env-file .env \
-    ghcr.io/niels-emmer/runsheet:1.0.0 status
+    ghcr.io/niels-emmer/runsheet:1.1.0 status
 ```
+
+Tags are release tags, so `1.1.0` is the first one that carries this image — `v1.0.0` predates both the
+`Dockerfile` and the workflow that publishes it.
 
 Six things behave differently inside a container, and each has one fix:
 

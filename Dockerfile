@@ -6,7 +6,7 @@
 # files under their own git history. Copying the toolkit in would give the image
 # a second `instance/` and a second source of truth; see docs/decisions/D14.
 #
-#   docker run --rm -v "$PWD:/repo" ghcr.io/niels-emmer/runsheet:1.0.0 status
+#   docker run --rm -v "$PWD:/repo" ghcr.io/niels-emmer/runsheet:1.1.0 status
 
 FROM python:3.12-alpine
 
