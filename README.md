@@ -218,12 +218,18 @@ to take a result other than the top one), `sfx` and `jingle`. `skip` additionall
 `status`, `diff` and `validate` accept `--json`, which prints one JSON document on stdout instead of the
 formatted report — the same information, for a caller that must not parse prose. The shape is
 `{"command": ..., "ok": ..., "payload": {...}}`, and `payload` holds the command's own fields: `status`
-reports tier, endpoint, station, on-air state, config counts and repo-vs-live sync; `diff` reports the
-change count plus personas, shows, changed grid days, settings keys, character, override, blocklist and
-skills; `validate` reports the directory, errors, warnings, unreadable input, a combined `issues` list and
-counts. Exit codes do not change, so `diff` still exits 1 on drift and `validate` 1 on errors. A failed
-command still prints a document — `ok: false`, `payload: null`, and an `error` message — alongside the
-stderr line, so stdout is always parseable when `--json` was asked for.
+reports tier, endpoint, station, on-air state, config counts, repo-vs-live sync, and the tier-2 discovery
+result (`tier2.state` is `not-configured`, `probe-failed`, `none-found` or `found`, with candidates and
+any host note); `diff` reports the change count plus personas, shows, changed grid days, settings keys,
+character, override, blocklist and skills; `validate` reports the directory, errors, warnings, unreadable
+input, a combined `issues` list and counts.
+
+`ok` mirrors a zero exit code: for `status` the station API answered, for `diff` no drift was found, and
+for `validate` there are no errors and nothing unreadable. A tier-1 `diff` can be `ok: true` on the
+readable fields only, so check `payload.trimmed` before treating it as a full match. Exit codes do not
+change, so `diff` still exits 1 on drift and `validate` 1 on errors. A failed command still prints a
+document — `ok: false`, `payload: null`, and an `error` message — alongside the stderr line, so stdout is
+always parseable when `--json` was asked for.
 
 Two directories are called `skills/`, and they are different things:
 
