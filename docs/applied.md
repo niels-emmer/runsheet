@@ -10,9 +10,11 @@ lines and colliding on every rebase.
 
 `apply --yes` writes its own entry once the post-apply read-back proves the writes landed, so a real apply
 is recorded even when nobody remembers to write it. An automatic entry is named
-`<YYYY-MM-DD>-auto-apply-<HHMMSSZ>.md` and its index row is appended here. A dry run and an apply whose
-verification fails write nothing; entries are append-only, the tool never edits a past one, and a human may
-still add context by hand.
+`<YYYY-MM-DD>-auto-apply-<HHMMSSZ>.md` and its index row is appended here. Its **What changed** is the
+comparison against the station taken *before* the write — the same one `diff` makes — not the whole
+payload, because apply always sends whole objects; at tier 1 the sections that cannot be read say so. A dry
+run and an apply whose verification fails write nothing; entries are append-only, the tool never edits a
+past one, and a human may still add context by hand.
 
 Each entry: **Date / Commit / What changed / Backup ref / Verified by / Listener check.**
 `Backup ref` points at the `settings.json` + `schedule.json` copy taken **outside this repo** immediately

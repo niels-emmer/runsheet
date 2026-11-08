@@ -2306,6 +2306,22 @@ def take_backup(config, base_dir=None, state=None, with_library=False):
     return destination, manifest
 
 
+def _visible_diff(repo_items, live_items):
+    """Tier-1 entity diff over the fields the API actually exposes."""
+    added = sorted(set(repo_items) - set(live_items))
+    removed = sorted(set(live_items) - set(repo_items))
+    changed = []
+    for id_ in set(repo_items) & set(live_items):
+        live = live_items[id_]
+        repo_item = repo_items[id_]
+        # Only fields the repo object actually carries: a trimmed read can
+        # include derived keys (a single "mood") that no show document holds.
+        if any(repo_item[key] != value for key, value in live.items() if key in repo_item):
+            changed.append(id_)
+    return {"added": added, "removed": removed, "changed": sorted(changed),
+            "unchanged": sorted((set(repo_items) & set(live_items)) - set(changed))}
+
+
 def diff_trimmed(config, repo, as_json=False):
     """Tier-1 comparison over the fields the API actually exposes."""
     status, personas = http_json(config, "/api/personas")
@@ -2316,22 +2332,8 @@ def diff_trimmed(config, repo, as_json=False):
     live_personas = {p.get("id"): p for p in (personas.get("personas") or []) if p.get("id")}
     live_shows = {s.get("id"): s for s in (schedule.get("shows") or []) if s.get("id")}
 
-    def visible_diff(repo_items, live_items):
-        added = sorted(set(repo_items) - set(live_items))
-        removed = sorted(set(live_items) - set(repo_items))
-        changed = []
-        for id_ in set(repo_items) & set(live_items):
-            live = live_items[id_]
-            repo_item = repo_items[id_]
-            # Only fields the repo object actually carries: a trimmed read can
-            # include derived keys (a single "mood") that no show document holds.
-            if any(repo_item[key] != value for key, value in live.items() if key in repo_item):
-                changed.append(id_)
-        return {"added": added, "removed": removed, "changed": sorted(changed),
-                "unchanged": sorted((set(repo_items) & set(live_items)) - set(changed))}
-
-    report = {"personas": visible_diff(repo["personas"], live_personas),
-              "shows": visible_diff(repo["shows"], live_shows)}
+    report = {"personas": _visible_diff(repo["personas"], live_personas),
+              "shows": _visible_diff(repo["shows"], live_shows)}
 
     grid_changed = [day for day in sorted(set(repo["grid"]) | set(schedule.get("schedule") or {}))
                     if (repo["grid"].get(day) or []) != ((schedule.get("schedule") or {}).get(day) or [])]
@@ -3112,10 +3114,6 @@ def _cell(value):
     return (text or "\u2014").replace("|", "\\|")
 
 
-def _count(number, word):
-    return "%d %s%s" % (number, word, "" if number == 1 else "s")
-
-
 def _capped_list(items, limit=8):
     """A comma list capped so one entry does not become a paragraph."""
     items = [str(item) for item in items]
@@ -3139,53 +3137,163 @@ def run_commit():
     return value if result.returncode == 0 and value else None
 
 
-def describe_applied(steps, grid_body, repo_blocklist, repo_skills, lock):
-    """What this run sent: the sections and entities apply actually touched."""
+def live_change_report(config, tier, repo, repo_blocklist, repo_skills, lock,
+                       live_settings=None):
+    """What the repo changes relative to the station, computed before the write.
+
+    apply sends whole objects, so the payload alone cannot say what changed: a
+    run that edits one persona field and a run that touches nothing both POST
+    every persona. This is the same comparison `diff` makes, read before the
+    writes land, so the audit entry can name the change instead of the payload.
+
+    Returns {"report", "blocklist", "skills", "note"}. At tier 1 the settings
+    and character sections, and 14 persona / 19 show fields, are unreadable;
+    they are marked rather than silently reported as unchanged.
+    """
+    if tier == 2:
+        settings = (live_settings if live_settings is not None
+                    else json.loads(read_state_file(config, "settings.json")))
+        schedule = json.loads(read_state_file(config, "schedule.json"))
+        live = build_live_model(settings, schedule)
+        report = compare_models(repo, live)
+        note = None
+    else:
+        status, personas = http_json(config, "/api/personas")
+        status_schedule, schedule = http_json(config, "/api/schedule")
+        if status != 200 or status_schedule != 200:
+            raise ToolError(
+                "could not read the station to record what changed (HTTP %s, %s)"
+                % (status, status_schedule))
+        live_personas = {p.get("id"): p for p in (personas.get("personas") or [])
+                         if p.get("id")}
+        live_shows = {s.get("id"): s for s in (schedule.get("shows") or [])
+                      if s.get("id")}
+        report = {"personas": _visible_diff(repo["personas"], live_personas),
+                  "shows": _visible_diff(repo["shows"], live_shows)}
+        grid_changed = [day for day in sorted(set(repo["grid"])
+                                              | set(schedule.get("schedule") or {}))
+                        if (repo["grid"].get(day) or [])
+                        != ((schedule.get("schedule") or {}).get(day) or [])]
+        report["grid"] = {"changed_days": grid_changed, "unchanged": not grid_changed,
+                          "cells": sum(len(day) for day
+                                       in (schedule.get("schedule") or {}).values())}
+        report["settings"] = {"changed": [], "keys": 0, "unchanged": True,
+                              "unreadable": True}
+        report["character"] = {"changed": [], "unchanged": True, "unreadable": True}
+        report["override"] = {"unchanged": repo.get("override")
+                              == schedule.get("override"),
+                              "repo": repo.get("override"),
+                              "live": schedule.get("override")}
+        note = ("14 persona fields and 19 show fields are not readable at tier 1, "
+                "so drift inside them cannot be recorded")
+
+    live_blocklist = blocklist_to_repo(fetch_blocklist(config), lock)
+    blocklist_report = compare_blocklist(repo_blocklist, live_blocklist)
+    skills_report = {"added": [], "removed": [], "changed": [], "unchanged": []}
+    if skills_root().is_dir():
+        skills_report = compare_skills(repo_skills, load_live_skills(config, tier))
+    return {"report": report, "blocklist": blocklist_report,
+            "skills": skills_report, "note": note}
+
+
+def _entity_labels(repo, lock, kind):
+    """Human names for diff keys: persona name, show slug, or the raw id."""
+    labels = {}
+    for key, item in (repo.get(kind) or {}).items():
+        if kind == "shows" and key.startswith("new:"):
+            labels[key] = key[len("new:"):]
+        elif kind == "shows":
+            labels[key] = (lock.get("ids") or {}).get(key) or item.get("name") or key
+        else:
+            labels[key] = item.get("name") or key
+    return labels
+
+
+def _verbs(part, labels):
+    """`added x, changed y` for one entity kind, ignoring removals."""
+    bits = []
+    for verb in ("added", "changed"):
+        values = part.get(verb) or []
+        if values:
+            bits.append("%s %s" % (verb, _capped_list(
+                [labels.get(value, value) for value in values], 6)))
+    return "; ".join(bits)
+
+
+def describe_changes(change, repo, lock):
+    """What this apply changes, for the audit entry. Never the sent inventory."""
+    report = change["report"]
+    blocklist = change["blocklist"]
+    skills = change["skills"]
     parts = []
 
-    for step in steps:
-        body = step.get("body") or {}
-        if step.get("entity") != "settings":
-            continue
-        bits = []
-        if "personas" in body:
-            names = [persona.get("name") or persona.get("id") or "?"
-                     for persona in body["personas"]]
-            bits.append("personas %d (%s)" % (len(names), _capped_list(names, 6)))
-            if body.get("activePersonaId"):
-                bits.append("activePersonaId")
-        keys = [key for key in sorted(body) if key not in ("personas", "activePersonaId")]
-        if keys:
-            bits.append("%d settings keys (%s)" % (len(keys), _capped_list(keys)))
-        if bits:
-            parts.append("; ".join(bits))
+    for kind in ("personas", "shows"):
+        labels = _entity_labels(repo, lock, kind)
+        detail = _verbs(report[kind], labels)
+        parts.append("%s: %s" % (kind, detail) if detail else "%s unchanged" % kind)
 
-    shows = []
-    for step in steps:
-        if step.get("entity") != "show":
-            continue
-        show = (step.get("body") or {}).get("show") or {}
-        slug = step.get("slug") or show.get("name") or "?"
-        ident = show.get("id") or (lock.get("shows") or {}).get(slug) or "new id"
-        shows.append("%s=%s" % (slug, ident))
-    if shows:
-        parts.append("shows %d (%s)" % (len(shows), _capped_list(shows)))
+    if report["settings"].get("unreadable"):
+        parts.append("settings: not comparable at tier 1")
+    elif report["settings"]["changed"]:
+        parts.append("settings keys changed: %s"
+                     % _capped_list(report["settings"]["changed"]))
+    else:
+        parts.append("settings unchanged")
 
-    schedule = grid_body.get("schedule") or {}
-    cells = sum(len(day or []) for day in schedule.values())
-    grid = "grid %d cells" % cells
-    if grid_body.get("override"):
-        grid += ", override set"
-    parts.append(grid)
+    if report["character"].get("unreadable"):
+        parts.append("character: not comparable at tier 1")
+    elif report["character"]["changed"]:
+        parts.append("character fields changed: %s"
+                     % _capped_list(report["character"]["changed"]))
+    else:
+        parts.append("character unchanged")
 
-    entries = len(repo_blocklist.get("entries") or [])
-    rules = [rule_slug(rule) for rule in repo_blocklist.get("rules") or []]
-    if entries or rules:
-        parts.append("blocklist %s, %s (%s)"
-                     % (_count(entries, "entry"), _count(len(rules), "rule"),
-                        _capped_list(rules, 4)))
-    if repo_skills:
-        parts.append("skills %d (%s)" % (len(repo_skills), _capped_list(sorted(repo_skills), 4)))
+    days = [DAY_LABELS[int(day)] for day in report["grid"]["changed_days"]
+            if str(day).isdigit() and int(day) in DAY_LABELS]
+    parts.append("grid changed on %s" % _capped_list(days) if days else "grid unchanged")
+
+    override = report["override"]
+    if not override["unchanged"]:
+        if override.get("repo"):
+            show_names = _entity_labels(repo, lock, "shows")
+            value = show_names.get(override["repo"], override["repo"])
+            parts.append("override set to %s" % value)
+        else:
+            parts.append("override cleared")
+
+    for kind in ("entries", "rules"):
+        part = blocklist[kind]
+        labels = part.get("labels") or {}
+        detail = _verbs(part, labels)
+        if detail:
+            parts.append("blocklist %s: %s" % (kind, detail))
+
+    skill_detail = _verbs(skills, {})
+    if skill_detail:
+        parts.append("skills: %s" % skill_detail)
+
+    # apply never deletes, so a removal is reported as pending, never as done.
+    pending = []
+    for kind in ("personas", "shows"):
+        pending += list(report[kind].get("removed") or [])
+    for kind in ("entries", "rules"):
+        pending += list(blocklist[kind].get("removed") or [])
+    pending += list(skills.get("removed") or [])
+    if pending:
+        parts.append("%d removal(s) left on the station (apply does not delete)"
+                     % len(pending))
+
+    changed = (any(report[kind][verb] for kind in ("personas", "shows")
+                   for verb in ("added", "changed"))
+               or report["settings"]["changed"] or report["character"]["changed"]
+               or report["grid"]["changed_days"] or not report["override"]["unchanged"]
+               or any(blocklist[kind][verb] for kind in ("entries", "rules")
+                      for verb in ("added", "changed"))
+               or skills["added"] or skills["changed"])
+    if not changed:
+        parts.insert(0, "no difference against the station: the payload already matched it")
+    if change["note"]:
+        parts.append("note: %s" % change["note"])
     return "; ".join(parts)
 
 
@@ -3208,9 +3316,12 @@ def describe_verification(tier, repo_blocklist, repo_skills):
     return text
 
 
-def write_applied_entry(tier, steps, grid_body, backup_ref, repo_blocklist, repo_skills,
-                        lock):
+def write_applied_entry(tier, changed, verified, backup_ref):
     """Write one entry file and its index row after a verified apply.
+
+    `changed` is the pre-write change set rendered by describe_changes, not the
+    payload: apply sends whole objects, so the payload says nothing about what
+    actually differed.
 
     Never raises: the writes already landed and were proved, so a missing or
     unwritable docs/ tree must not turn a good apply into a failure. A fork run
@@ -3250,11 +3361,9 @@ def write_applied_entry(tier, steps, grid_body, backup_ref, repo_blocklist, repo
             "",
             "- **Date:** %s" % stamp,
             "- **Commit:** %s" % (run_commit() or "\u2014"),
-            "- **What changed:** %s" % describe_applied(
-                steps, grid_body, repo_blocklist, repo_skills, lock),
+            "- **What changed:** %s" % changed,
             "- **Backup ref:** %s" % (backup_ref or "\u2014 (--no-backup)"),
-            "- **Verified by:** %s" % describe_verification(
-                tier, repo_blocklist, repo_skills),
+            "- **Verified by:** %s" % verified,
             "- **Listener check:** \u2014 (not checked by apply)",
             "",
         ))
@@ -3400,6 +3509,19 @@ def cmd_apply(config, args):
             "schedule or the full show definitions, so this write would be unprotected. Pass "
             "--no-backup to accept that explicitly.")
 
+    # What actually differs, read BEFORE the writes: apply always sends the
+    # whole repo, so only a pre-write comparison can say what this run changes.
+    # A failed read must not change how apply fails (the writes do their own
+    # reading): the entry then says the change set could not be determined.
+    try:
+        change = live_change_report(config, tier, model, repo_blocklist, repo_skills,
+                                    lock, live_settings=live_settings)
+        changed_text = describe_changes(change, model, lock)
+    except (ToolError, ConfigError) as exc:
+        changed_text = ("change set unavailable (%s); the whole repo payload was sent"
+                        % exc)
+    verified_text = describe_verification(tier, repo_blocklist, repo_skills)
+
     prune_settings_before = prune_schedule_before = None
     if args.prune:
         prune_settings_before = json.loads(read_state_file(config, "settings.json"))
@@ -3473,11 +3595,10 @@ def cmd_apply(config, args):
               "of settings (and every secret) is unreadable at tier 1, so it was NOT verified")
     print("result    %d step(s) written; ids.lock.json updated" % (len(steps) + 1))
 
-    # The audit row goes after the read-back and before prune: only a verified
+    # The audit entry goes after the read-back and before prune: only a verified
     # write earns one, and a prune that is later refused must not erase the fact
     # that the writes landed.
-    write_applied_entry(tier, steps, grid_body, backup_ref, repo_blocklist,
-                        repo_skills, lock)
+    write_applied_entry(tier, changed_text, verified_text, backup_ref)
 
     # Prune last, after the writes and after verification: a failed write must
     # never trigger a delete, and verification raising stops us before this line.
