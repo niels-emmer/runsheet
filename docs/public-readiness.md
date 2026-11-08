@@ -124,7 +124,7 @@ python3 scripts/runsheet.py --help
 ```
 
 The commands are `status`, `pull`, `diff`, `validate`, `apply`, `backup`, `restore`, `character`,
-`blocklist`, `skills` and `onair`. The README appendix lists all eleven with their main flags, and `--help`
+`blocklist`, `skills` and `onair`. `docs/REFERENCE.md` lists every command with its main flags, and `--help`
 is the authority.
 
 **Why:** private-repo habits are invisible to the author and are the first thing a visitor trips over —

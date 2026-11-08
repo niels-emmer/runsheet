@@ -104,6 +104,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **The README is now a short front door; the detail moved under `docs/`.** The opening paragraph and the
+  tldr no longer say the same thing: the paragraph says what runsheet is, and a new "Install it with your
+  agent" section leads with a prompt an agent can execute, a three-command manual path, and a link to
+  `docs/INSTALL.md` for the full setup (both tiers, one credentials file across checkouts, the manual
+  `.env` route, the demo station and `--mock`). It also states plainly that runsheet does not run Docker —
+  the SUB/WAVE station does. The request catalogue moved to `docs/USAGE.md` behind a table in the README,
+  and the command/flag/`--json` appendix became `docs/REFERENCE.md`; both are listed in the
+  `docs/ARCHITECTURE.md` repo layout. No command or behaviour changed.
+
 - **Claude Code, Codex and OpenCode now discover the five skills natively.**
   `.claude/skills/<name>/SKILL.md` is a committed relative symlink to `../../../skills/<name>/SKILL.md`, and
   `.agents/skills/<name>` is a relative symlink to the skill's folder (`../../skills/<name>`) — the location
