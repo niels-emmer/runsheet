@@ -65,6 +65,23 @@ All notable changes to this project are documented here. The format is based on
   time and host; a contender fails fast with that holder instead of hanging or corrupting the lock. A
   lock left by a crashed process is recovered once its pid is gone, while a foreign-host or unreadable
   lock is never stolen. Read-only commands (`status`, `diff`, `validate`, `capabilities`) take no lock.
+- **`init` sets up `.env` in one step.** `init --host <ssh-address>` runs the same host discovery
+  `status` does, then writes `SUBWAVE_HOST`, `SUBWAVE_CONTAINER` and `SUBWAVE_STATE_DIR` straight
+  into the credentials file the tool reads — `RUNSHEET_ENV_FILE` when set, otherwise a repo-root
+  `.env` created from `.env.example` when absent — and prints the tier-2 confirmation. Add
+  `--base-url` and the admin flags in the same pass to fill the HTTP side: host access is HTTP plus
+  ssh. Without `--host` the same HTTP flags record the lighter tier. It refuses to overwrite a
+  populated file without `--force`, printing what it would write (secrets masked) first, and writes
+  the file owner-only.
+- **`apply --yes` records itself in `docs/applied/`.** After the post-apply read-back proves the
+  writes landed, the tool writes one audit entry (`<YYYY-MM-DD>-auto-apply-<HHMMSSZ>.md`) and adds its
+  index row to `docs/applied.md`, naming the UTC time, the checkout commit, what it sent (settings keys,
+  shows, grid cells, blocklist entries and rules, skills) and what the read-back could and could not
+  verify. The trail previously depended on someone remembering to type the entry, so it drifted from the
+  station the first time a run was forgotten. A dry run and a failed verification write nothing, existing
+  entries are never rewritten, and a checkout without `docs/` (an `instance/`-only fork) skips the write
+  with a warning instead of failing an apply that already landed. Pinned by
+  [`tests/test_apply_audit.py`](tests/test_apply_audit.py), which uses the shared mock station.
 - **Tier 2 is reachable from a bare ssh host.** `status` at tier 1 now probes the host it is given: one
   read-only ssh round trip lists the running containers, inspects their mounts, and reports the first
   mount that already contains a `settings.json`, printing the exact `SUBWAVE_CONTAINER=` and

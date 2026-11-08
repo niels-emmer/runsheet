@@ -8,6 +8,12 @@ One entry per apply, as its own file in [`applied/`](applied/), named
 purpose: parallel contributors each add a file, so two branches never end an apply by editing the same
 lines and colliding on every rebase.
 
+`apply --yes` writes its own entry once the post-apply read-back proves the writes landed, so a real apply
+is recorded even when nobody remembers to write it. An automatic entry is named
+`<YYYY-MM-DD>-auto-apply-<HHMMSSZ>.md` and its index row is appended here. A dry run and an apply whose
+verification fails write nothing; entries are append-only, the tool never edits a past one, and a human may
+still add context by hand.
+
 Each entry: **Date / Commit / What changed / Backup ref / Verified by / Listener check.**
 `Backup ref` points at the `settings.json` + `schedule.json` copy taken **outside this repo** immediately
 before the apply (they contain secrets), e.g. `~/subwave-backups/2026-11-02T1015Z/`. `Listener check` is

@@ -307,7 +307,7 @@ class BackupBeforeWriteTests(ApplyTestCase):
 
         self.assertEqual(code, 0, output)
         self.assertIn("backup    ", output)
-        self.assertNotIn("skipped", output)
+        self.assertNotIn("backup    skipped", output)
 
         stamps = sorted(self.backup_root.glob("*/*"))
         self.assertEqual(len(stamps), 1, "exactly one backup should be taken")
