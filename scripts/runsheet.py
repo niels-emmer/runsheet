@@ -1201,18 +1201,21 @@ def _masked_env_lines(values):
 
 
 def _update_env_text(text, values):
-    """Replace the named KEY= lines in `text` and append any that are missing.
+    """Replace every KEY= line for a named key and append any that are missing.
 
-    Everything else - comments, ordering, unrelated keys - is left alone, so a
-    hand-curated .env survives an init.
+    Every occurrence is rewritten, not just the first: `load_dotenv` keeps the
+    last value, so leaving a later duplicate alone would silently override the
+    value init reports. Everything else - comments, ordering, unrelated keys -
+    is left alone, so a hand-curated .env survives an init.
     """
     remaining = dict(values)
     out = []
     for raw in text.splitlines():
         match = ENV_LINE_RE.match(raw)
-        if match and match.group(2) in remaining:
+        if match and match.group(2) in values:
             key = match.group(2)
-            out.append("%s%s=%s" % (match.group(1), key, remaining.pop(key)))
+            out.append("%s%s=%s" % (match.group(1), key, values[key]))
+            remaining.pop(key, None)
         else:
             out.append(raw)
     if remaining:
@@ -1297,12 +1300,21 @@ def cmd_init(config, args):
             text = "# runsheet configuration. .env is gitignored; never commit it.\n"
     _private_write(env_path, _update_env_text(text, values))
 
+    # HTTP 200 is not "stored": read the file back and name any key whose value
+    # in effect is not the one just written (a later duplicate used to win).
+    written_values = load_dotenv(env_path)
+    missed = [key for key in values if written_values.get(key) != values[key]]
+    if missed:
+        raise ToolError(
+            "wrote %s but these keys did not take effect: %s"
+            % (env_path, ", ".join(missed)))
+
     print("wrote     %s" % env_path)
     for line in _masked_env_lines(values):
         print("          %s" % line)
 
     # Read the file back and prove the tier, rather than claiming the write landed.
-    written = Config(dotenv=load_dotenv(env_path), environ={})
+    written = Config(dotenv=written_values, environ={})
     tier, detail = detect_tier(written)
     print("tier      %s" % TIER_LABEL[tier])
     print("why       %s" % detail)

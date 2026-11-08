@@ -223,6 +223,29 @@ class ClobberTests(InitTestCase):
         self.assertEqual(values["SUBWAVE_ADMIN_PASS"], "fake-old-pass",
                          "a key init did not name must survive")
 
+    def test_duplicate_keys_are_all_rewritten_so_the_last_one_matches(self):
+        # The manual route leaves empty template lines and appends pasted ones at
+        # the bottom. load_dotenv keeps the last, so rewriting only the first
+        # occurrence used to report a write that had no effect.
+        self.copy_example()
+        self.write_env("SUBWAVE_STATE_DIR=\n"
+                       "SUBWAVE_CONTAINER=\n"
+                       "SUBWAVE_HOST=me@host\n"
+                       "SUBWAVE_CONTAINER=old-container\n"
+                       "SUBWAVE_STATE_DIR=/old/state\n")
+        self.stub_ssh("FOUND sub-wave-controller /var/sub-wave\n", FakeResult())
+
+        code, output = self.run_cli("init", "--host", "new@host", "--force")
+
+        self.assertEqual(code, 0, output)
+        values = self.read_env()
+        self.assertEqual(values["SUBWAVE_HOST"], "new@host")
+        self.assertEqual(values["SUBWAVE_CONTAINER"], "sub-wave-controller")
+        self.assertEqual(values["SUBWAVE_STATE_DIR"], "/var/sub-wave")
+        self.assertEqual(
+            self.env_path().read_text(encoding="utf-8").count("/old/state"), 0,
+            "the stale duplicate must be rewritten, not left to win")
+
     def test_an_empty_env_is_not_treated_as_populated(self):
         self.copy_example()  # every key present, every value empty
 
