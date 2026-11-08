@@ -13,9 +13,9 @@ is recorded even when nobody remembers to write it. An automatic entry is named
 `<YYYY-MM-DD>-auto-apply-<HHMMSSZ>.md` and its index row is appended here. Its **What changed** is the
 comparison against the station taken *before* the write — the same one `diff` makes — not the whole
 payload, because apply always sends whole objects; at tier 1 the sections that cannot be read say so. A
-`--prune` run records what was deleted, or why the prune was refused. A dry run and an apply whose
-verification fails write nothing; entries are append-only, the tool never edits a past one, and a human may
-still add context by hand.
+`--prune` run records what was deleted, or why the prune was refused. A dry run, a `--mock` rehearsal and
+an apply whose verification fails write nothing: the trail records on-air changes only. Entries are
+append-only, the tool never edits a past one, and a human may still add context by hand.
 
 Each entry: **Date / Commit / What changed / Backup ref / Verified by / Listener check.**
 `Backup ref` points at the `settings.json` + `schedule.json` copy taken **outside this repo** immediately

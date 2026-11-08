@@ -3334,7 +3334,7 @@ def _backup_label(backup_ref):
     return "`%s`" % path
 
 
-def write_applied_entry(tier, changed, verified, backup_ref, prune=None):
+def write_applied_entry(tier, changed, verified, backup_ref, prune=None, mock=False):
     """Write one entry file and its index row after a verified apply.
 
     `changed` is the pre-write change set rendered by describe_changes, not the
@@ -3350,6 +3350,11 @@ def write_applied_entry(tier, changed, verified, backup_ref, prune=None):
     entry_path = None
     complete = False
     try:
+        if mock:
+            # A rehearsal is not an on-air apply: writing the permanent trail
+            # here would claim something landed on a station when nothing did.
+            print("audit     skipped: --mock is a rehearsal; nothing landed on a station")
+            return False
         if not index.is_file():
             print("audit     skipped: %s does not exist (no docs/ tree in this checkout)"
                   % index)
@@ -3649,7 +3654,8 @@ def cmd_apply(config, args):
                     "%s %s" % (item["kind"], item["label"]) for item in plan["items"])
                 print("result    %d deletion(s) done" % deleted)
     finally:
-        write_applied_entry(tier, changed_text, verified_text, backup_ref, prune_text)
+        write_applied_entry(tier, changed_text, verified_text, backup_ref, prune_text,
+                            mock=getattr(args, "mock", False))
     return EXIT_OK
 
 
