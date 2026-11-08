@@ -178,6 +178,51 @@ class ToolCallTests(McpServerTestCase):
                          "the toolkit's MCP server must not touch the station's own MCP")
 
 
+class ProtocolStdinTests(McpServerTestCase):
+    """At tier 2 the server shells out to ssh. ssh must never eat the protocol stream.
+
+    `ssh` reads stdin and forwards it to the remote command, so a child that
+    inherits fd 0 would consume the next JSON-RPC message while a tool call is
+    in flight. ssh_run must hand the child DEVNULL instead.
+    """
+
+    def setUp(self):
+        super().setUp()
+        os.environ["SUBWAVE_HOST"] = "mock@host"
+        os.environ["SUBWAVE_STATE_DIR"] = "/var/sub-wave"
+
+    def test_tier_two_ssh_never_inherits_the_protocol_stdin(self):
+        document = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        recorded = []
+
+        def fake_run(argv, **kwargs):
+            recorded.append({"argv": argv, "kwargs": kwargs})
+            command = argv[-1]
+            if "cat" in command and "settings.json" in command:
+                return subprocess.CompletedProcess(
+                    argv, 0, json.dumps(document["settings"]), "")
+            if "cat" in command and "schedule.json" in command:
+                return subprocess.CompletedProcess(
+                    argv, 0, json.dumps(document["schedule"]), "")
+            return subprocess.CompletedProcess(argv, 0, "", "")
+
+        original = runsheet.subprocess.run
+        runsheet.subprocess.run = fake_run
+        self.addCleanup(setattr, runsheet.subprocess, "run", original)
+
+        response = self.call_tool("runsheet_status")
+
+        self.assertNotIn("error", response)
+        self.assertIn("tier      2", self.text(response))
+        # probe, settings.json and schedule.json
+        self.assertEqual(len(recorded), 3, recorded)
+        for call in recorded:
+            with self.subTest(remote=call["argv"][-1]):
+                self.assertIs(call["kwargs"].get("stdin"), subprocess.DEVNULL,
+                              "ssh would inherit and consume the JSON-RPC stream")
+                self.assertNotIn("input", call["kwargs"])
+
+
 class StdioTransportTests(unittest.TestCase):
     """Run the real entry point: `runsheet.py mcp-server` over stdin/stdout."""
 
