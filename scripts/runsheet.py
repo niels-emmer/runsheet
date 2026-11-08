@@ -326,6 +326,217 @@ TIER_LABEL = {
     2: "2 - host access (ssh + docker exec)",
 }
 
+MOCK_PROBE_DETAIL = "in-process tests/mock_station.py; no network and no host"
+
+
+# --------------------------------------------------------------------------
+# --mock: the same tool, pointed at tests/mock_station.py in this process
+# --------------------------------------------------------------------------
+
+# The container path a real controller uses, and the station password the mock
+# accepts. Nothing here is read from the environment: --mock must never be
+# steered onto a live station by a stray .env.
+MOCK_STATION_PASSWORD = "mock-station"
+MOCK_HOST = "mock"
+MOCK_STATE_DIR = "/var/sub-wave"
+MOCK_BUILTIN_PATHS = ("/app/src/skills/builtins", "/app/dist/skills/builtins")
+
+_MOCK_MODULE = None
+
+
+def _load_mock_station():
+    """Import tests/mock_station.py on demand. Only --mock ever calls this."""
+    global _MOCK_MODULE
+    if _MOCK_MODULE is None:
+        import importlib.util
+        path = REPO_ROOT / "tests" / "mock_station.py"
+        if not path.is_file():
+            raise ConfigError(
+                "--mock needs %s, which is not in this checkout. It runs the repository's own "
+                "mock station, so it requires a full clone rather than just the script." % path)
+        spec = importlib.util.spec_from_file_location("runsheet_mock_station", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _MOCK_MODULE = module
+    return _MOCK_MODULE
+
+
+class MockStation:
+    """tests/mock_station.py, started in-process and wired up as a tier-2 station.
+
+    The HTTP half needs nothing special: the tool already speaks to a base URL.
+    The host half does: a real tier 2 runs `ssh host docker exec ... cat`, and
+    the mock's state dir is a local temp directory instead. So for the duration
+    of one command we swap `ssh_run`/`ssh_probe` for a shim that maps the
+    controller's paths onto that directory. `stop()` puts the real functions
+    back; nothing outside `--mock` ever sees this class.
+    """
+
+    def __init__(self):
+        import tempfile
+        module = _load_mock_station()
+        # globals() rather than sys.modules: tests load this file by path, so it
+        # is not necessarily registered under a module name.
+        self._module = globals()
+        self.server = module.start_mock()
+        self._saved_ssh_run = self._saved_ssh_probe = None
+        # Files this run wrote through the shim (a restore). They are read back
+        # from disk; everything else comes from the station's live in-memory
+        # state, because the mock's HTTP writes do not touch its state dir.
+        self._locally_written = set()
+        try:
+            # The built-ins a pull skips live at /app/src/skills/builtins inside
+            # a real controller. Give the shim a directory holding the mock's
+            # seeded skill names, so `pull` can tell them from the operator's.
+            self._builtins = Path(tempfile.mkdtemp(prefix="runsheet-mock-builtins-"))
+            for slug, entry in self.server.station.skills.items():
+                if entry.get("seeded"):
+                    (self._builtins / slug).mkdir(parents=True, exist_ok=True)
+            self.config = Config(dotenv={}, environ={
+                "SUBWAVE_BASE_URL": self.server.url,
+                "SUBWAVE_ADMIN_USER": self.server.admin[0],
+                "SUBWAVE_ADMIN_PASS": self.server.admin[1],
+                "SUBWAVE_STATION_PASSWORD": MOCK_STATION_PASSWORD,
+                "SUBWAVE_HOST": MOCK_HOST,
+                "SUBWAVE_STATE_DIR": MOCK_STATE_DIR,
+                "SUBWAVE_CONTAINER": DEFAULT_CONTAINER,
+            })
+        except Exception:
+            self.server.stop()
+            shutil.rmtree(str(getattr(self, "_builtins", "")), ignore_errors=True)
+            raise
+        self._saved_ssh_run = self._module["ssh_run"]
+        self._saved_ssh_probe = self._module["ssh_probe"]
+        self._module["ssh_run"] = self.ssh_run
+        self._module["ssh_probe"] = self.probe
+
+    # -- the swapped host functions ---------------------------------------
+    def probe(self, config=None):
+        return True, MOCK_PROBE_DETAIL
+
+    def ssh_run(self, config, remote_command, timeout=DEFAULT_TIMEOUT, binary=False, stdin=None):
+        """Answer the `docker exec` commands tier 2 issues, from the local state dir."""
+        tokens = shlex.split(remote_command)
+        if tokens[:2] != ["docker", "exec"]:
+            return self._completed(binary, 127, "", "mock mode has no host to run %r on"
+                                   % remote_command)
+        rest = tokens[2:]
+        if rest and rest[0] == "-i":
+            rest = rest[1:]
+        if not rest or rest[0] != config.container:
+            return self._completed(binary, 127, "", "no container %r in the mock"
+                                   % (rest[0] if rest else ""))
+        argv = rest[1:]
+        if not argv:
+            return self._completed(binary, 127, "", "empty docker exec in mock mode")
+
+        if argv[0] == "cat" and len(argv) == 2:
+            relative = self._relative(argv[1])
+            document = self._live_document(relative)
+            if document is not None and relative not in self._locally_written:
+                payload = json.dumps(document, indent=2).encode("utf-8")
+            else:
+                try:
+                    payload = self._local(argv[1]).read_bytes()
+                except OSError as exc:
+                    return self._completed(binary, 1, "", str(exc))
+            return self._completed(binary, 0,
+                                   payload if binary else payload.decode("utf-8", "replace"), "")
+
+        if argv[:2] == ["test", "-r"] and len(argv) == 3:
+            return self._completed(binary, 0 if self._local(argv[2]).is_file() else 1, "", "")
+
+        if argv[:2] == ["mkdir", "-p"] and len(argv) == 3:
+            self._local(argv[2]).mkdir(parents=True, exist_ok=True)
+            return self._completed(binary, 0, "", "")
+
+        if argv[:2] == ["rm", "-f"] and len(argv) == 3:
+            target = self._local(argv[2])
+            if target.exists():
+                target.unlink()
+            return self._completed(binary, 0, "", "")
+
+        if argv[:2] == ["sh", "-c"] and len(argv) == 5 and argv[3] == "_":
+            return self._shell(binary, argv[2], argv[4], stdin)
+
+        return self._completed(binary, 127, "", "mock mode cannot run %r" % remote_command)
+
+    def _shell(self, binary, script, container_path, stdin):
+        target = self._local(container_path)
+        if "find . -type f" in script:
+            if not target.is_dir():
+                return self._completed(binary, 1, "", "no such directory: %s" % target)
+            lines = ["./" + path.relative_to(target).as_posix()
+                     for path in target.rglob("*") if path.is_file()]
+            return self._completed(binary, 0, "\n".join(sorted(lines)), "")
+        if "cat >" in script:
+            payload = stdin or b""
+            if isinstance(payload, str):
+                payload = payload.encode("utf-8")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
+            relative = self._relative(container_path)
+            if relative is not None:
+                self._locally_written.add(relative)
+            return self._completed(binary, 0, "", "")
+        if "ls " in script:
+            if not target.is_dir():
+                return self._completed(binary, 1, "", "")
+            return self._completed(binary, 0, "\n".join(sorted(p.name for p in target.iterdir())), "")
+        return self._completed(binary, 127, "", "mock mode cannot run %r" % script)
+
+    def _relative(self, container_path):
+        """The state-dir-relative path, or None for anything outside it."""
+        if container_path == MOCK_STATE_DIR:
+            return ""
+        if container_path.startswith(MOCK_STATE_DIR + "/"):
+            return container_path[len(MOCK_STATE_DIR) + 1:]
+        return None
+
+    def _live_document(self, relative):
+        """The documents the station serves over HTTP, as they are right now.
+
+        The mock keeps writes in memory and never rewrites its state dir, while a
+        real controller persists them. Serving the in-memory document is what
+        makes a tier-2 read-back - and the apply verification that depends on it -
+        mean the same thing here as it does on a live station.
+        """
+        station = self.server.station
+        if relative == "settings.json":
+            return station.settings
+        if relative == "schedule.json":
+            return station.schedule
+        if relative == BLOCKLIST_FILE:
+            return station.blocklist
+        return None
+
+    def _local(self, container_path):
+        for root in MOCK_BUILTIN_PATHS:
+            if container_path == root or container_path.startswith(root + "/"):
+                return self._builtins / container_path[len(root):].lstrip("/")
+        if container_path == MOCK_STATE_DIR or container_path.startswith(MOCK_STATE_DIR + "/"):
+            return Path(self.server.state_dir) / container_path[len(MOCK_STATE_DIR):].lstrip("/")
+        raise ToolError(
+            "mock mode only exposes the state dir (%s); %r is outside it"
+            % (MOCK_STATE_DIR, container_path))
+
+    @staticmethod
+    def _completed(binary, returncode, stdout, stderr):
+        if binary:
+            stdout = stdout.encode("utf-8") if isinstance(stdout, str) else stdout
+            stderr = stderr.encode("utf-8") if isinstance(stderr, str) else stderr
+        return subprocess.CompletedProcess(args=[], returncode=returncode,
+                                           stdout=stdout, stderr=stderr)
+
+    # -- lifecycle ---------------------------------------------------------
+    def stop(self):
+        if self._saved_ssh_run is not None:
+            self._module["ssh_run"] = self._saved_ssh_run
+        if self._saved_ssh_probe is not None:
+            self._module["ssh_probe"] = self._saved_ssh_probe
+        shutil.rmtree(str(self._builtins), ignore_errors=True)
+        self.server.stop()
+
 
 # --------------------------------------------------------------------------
 # slugs and the lockfile
@@ -4446,11 +4657,26 @@ def _onair_call(args):
     raise ToolError("unknown onair command %r" % action)
 
 
+def _nested_parsers(parser):
+    """Every command parser below `parser`, for flags accepted anywhere in argv."""
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for child in action.choices.values():
+                yield child
+                yield from _nested_parsers(child)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="runsheet.py",
         description="Operate a SUB/WAVE station from an agent session: author, review, back up, apply.",
     )
+    # The mock flag belongs before the command, but `status --mock` is what
+    # people (and agents) type, so every subparser accepts it too. SUPPRESS on
+    # the children means a command that omits it cannot reset the root's True.
+    parser.add_argument(
+        "--mock", action="store_true",
+        help="run against the in-process mock station (tests/mock_station.py) instead of a live one")
     sub = parser.add_subparsers(dest="command", required=True)
 
     status = sub.add_parser("status", help="tier, station, on-air state, repo sync")
@@ -4669,21 +4895,37 @@ def build_parser():
                         help="also copy library.db (audio analysis, large)")
     backup.set_defaults(func=cmd_backup)
 
+    for command in _nested_parsers(parser):
+        command.add_argument(
+            "--mock", action="store_true", default=argparse.SUPPRESS,
+            help="run against the in-process mock station instead of a live one")
+
     return parser
 
 
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    config = Config()
+    mock = None
+    if args.mock:
+        try:
+            mock = MockStation()
+        except (ConfigError, ToolError) as exc:
+            print("runsheet: %s" % exc, file=sys.stderr)
+            return EXIT_CONFIG
+        print("mock      %s (in-process tests/mock_station.py; no network, no host)"
+              % mock.server.url, flush=True)
     try:
-        return args.func(config, args)
+        return args.func(mock.config if mock else Config(), args)
     except ConfigError as exc:
         print("runsheet: %s" % exc, file=sys.stderr)
         return EXIT_CONFIG
     except ToolError as exc:
         print("runsheet: %s" % exc, file=sys.stderr)
         return EXIT_ERROR
+    finally:
+        if mock is not None:
+            mock.stop()
 
 
 if __name__ == "__main__":

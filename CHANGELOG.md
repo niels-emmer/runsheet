@@ -17,6 +17,14 @@ All notable changes to this project are documented here. The format is based on
   tier 1, `apply` needs `--no-backup`). `--json` emits `{"tier": …, "capabilities": {…}}` so an
   orchestrator can decide whether a task is possible before spawning a worker. It changes no other
   command's output and attempts no network or ssh operation.
+- **`--mock` runs any station command against the in-process mock station.** `tests/mock_station.py` was
+  reachable only from the test suite; now `status`, `pull`, `diff`, `apply`, `backup`, `restore` and
+  `onair` accept `--mock` (before or after the command) and the tool starts that same mock itself, on
+  loopback, as a tier-2 station. Nothing leaves the machine: no network, no ssh, and no `SUBWAVE_*` value
+  from the environment or `.env` is consulted. The module is imported lazily, so the live path never loads
+  it. A real `apply --yes --mock` executes the full pre-write backup, write, and read-back verification and
+  prints what a live apply would, which is how a multi-field change can be rehearsed before it touches a
+  station. See [`tests/test_mock_mode.py`](tests/test_mock_mode.py).
 - **Tier 2 is reachable from a bare ssh host.** `status` at tier 1 now probes the host it is given: one
   read-only ssh round trip lists the running containers, inspects their mounts, and reports the first
   mount that already contains a `settings.json`, printing the exact `SUBWAVE_CONTAINER=` and

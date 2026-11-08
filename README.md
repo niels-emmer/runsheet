@@ -189,10 +189,14 @@ Two ways to reach a station. The second is worth having.
 | `skills` | the station's own DJ segments | `skills new late-shift` |
 | `blocklist` | bans and rules | `blocklist block --type artist --id <id>` |
 | `onair` | live control | `onair say "Back after this." --yes` |
+| `--mock` | run any station command against the in-process mock station: no network, no ssh, no live config | `apply --yes --mock` |
 
 Flags live here rather than in the body: `apply` also takes `--force-now` (write while on air), `--no-backup`,
 `--backup-dir`, and `--prune` / `--force-prune` for things on the station but not in your files. `pull` takes
-`--allow-lossy` for a partial copy. `backup --dir` writes the copy somewhere other than `~/.subwave-backups`,
+`--allow-lossy` for a partial copy. `--mock` works with every command that talks to a station and swaps the
+station for the repository's own mock (`tests/mock_station.py`), started in-process on loopback as a tier-2
+station; it ignores `SUBWAVE_*` and `.env` entirely. Each run starts a fresh station, so nothing persists
+between invocations. `backup --dir` writes the copy somewhere other than `~/.subwave-backups`,
 and `restore --force-now` restores while the station is on air. `character init` takes `--from demo|blank` — a
 placeholder station instead of the demo — and `--force` to replace an existing `instance/`. `skills edit`
 changes `--label`, `--cooldown` and `--brief`, and `blocklist rule add|edit` authors a rule by slug.
