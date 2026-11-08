@@ -99,6 +99,16 @@ class ContentionTests(LockTestCase):
         self.assertIn("locked by another runsheet command", output)
         self.assertFalse((self.root / "character" / "personas" / "dj-blocked.json").exists())
 
+    def test_a_skills_write_is_blocked_too(self):
+        self.seed_character()
+        self.hold_lock(os.getpid(), command="apply")
+
+        code, output = self.run_cli("skills", "new", "dj-blocked")
+
+        self.assertEqual(code, 1, output)
+        self.assertIn("locked by another runsheet command", output)
+        self.assertFalse((self.root / "skills" / "dj-blocked").exists())
+
     def test_pull_force_fails_fast_while_a_lock_is_held(self):
         self.seed_character()
         self.hold_lock(os.getpid(), command="apply")
@@ -203,6 +213,69 @@ class StaleLockTests(LockTestCase):
         self.assertEqual(code, 1, output)
         self.assertIn("locked by another runsheet command", output)
         self.assertIn("some-other-host", output)
+
+    def test_an_unreadable_lock_is_reported_not_removed(self):
+        self.seed_character()
+        self.lock_path.write_text("not a lock\n", encoding="utf-8")
+
+        code, output = self.run_cli("apply")
+
+        self.assertEqual(code, 1, output)
+        self.assertIn("locked by another runsheet command", output)
+        self.assertIn("unreadable lock file", output)
+        self.assertTrue(self.lock_path.exists(), "the unreadable lock must not be stolen")
+        self.assertEqual(self.lock_path.read_text(encoding="utf-8"), "not a lock\n")
+
+    def test_a_delayed_breaker_cannot_steal_a_replacement_lock(self):
+        # Reproduces the two-breaker race: B samples a dead holder, A removes it
+        # and installs its own live lock, then B reaches the break step. The
+        # breaker must make B re-read and refuse rather than unlink A's lock.
+        self.seed_character()
+        self.hold_lock(os.getpid(), command="apply")
+        stale_snapshot = {
+            "pid": self.dead_pid(),
+            "command": "apply",
+            "started": "2026-11-08T00:00:00Z",
+            "host": socket.gethostname(),
+        }
+
+        real_read = runsheet._read_write_lock
+        calls = {"count": 0}
+
+        def delayed_read(path):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return dict(stale_snapshot)  # the snapshot taken before A replaced it
+            return real_read(path)
+
+        saved = runsheet._read_write_lock
+        runsheet._read_write_lock = delayed_read
+        self.addCleanup(lambda: setattr(runsheet, "_read_write_lock", saved))
+
+        with self.assertRaises(runsheet.ToolError) as caught:
+            runsheet.InstanceWriteLock(self.root, "apply").acquire()
+
+        self.assertIn("locked by another runsheet command", str(caught.exception))
+        self.assertTrue(self.lock_path.exists(), "the live replacement lock must survive")
+        self.assertEqual(json.loads(self.lock_path.read_text())["pid"], os.getpid())
+        self.assertFalse((self.root / runsheet.WRITE_LOCK_BREAK).exists(),
+                         "the breaker is removed even when it does not break the lock")
+
+    def test_a_breaker_left_by_a_crash_refuses_rather_than_stealing(self):
+        self.seed_character()
+        self.hold_lock(self.dead_pid(), command="apply")
+        (self.root / runsheet.WRITE_LOCK_BREAK).write_text(json.dumps({
+            "pid": os.getpid(),
+            "command": "apply breaker",
+            "started": "2026-11-08T00:00:00Z",
+            "host": socket.gethostname(),
+        }) + "\n", encoding="utf-8")
+
+        code, output = self.run_cli("apply")
+
+        self.assertEqual(code, 1, output)
+        self.assertIn("stale-lock breaker", output)
+        self.assertTrue(self.lock_path.exists(), "a breaker must not license a steal")
 
 
 class ReadOnlyTests(LockTestCase):

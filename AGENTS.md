@@ -124,9 +124,10 @@ every show and the whole grid do not. So `backup` copies the config **and** thos
   costs seconds of stream interruption, so bundle such changes. Passwords and the rest apply live.
 - Never commit instance data. `instance/` and `.env` are gitignored, and `scripts/check-secrets.sh`
   blocks live values from entering a commit.
-- **One writer at a time in a checkout.** `pull`, `apply`, `restore`, and the `character`/`blocklist`
-  authoring commands take an advisory lock at `instance/.runsheet.lock` for their duration, so two agent
-  sessions cannot interleave an apply with another write or race on `ids.lock.json`. `pull --force` and
+- **One writer at a time in a checkout.** `pull`, `apply`, `restore`, and the
+  `character`/`skills`/`blocklist` authoring commands take an advisory lock at `instance/.runsheet.lock`
+  for their duration, so two agent sessions cannot interleave an apply with another write or race on
+  `ids.lock.json`. `pull --force` and
   `character init --force` empty `instance/` instead of removing it, so the lock survives the swap it
   protects. The lock records the pid, command, start time and host; a contender fails fast and names the
   holder instead of hanging. A lock left by a crashed process is recovered once its pid is gone (a
