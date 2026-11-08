@@ -1021,6 +1021,24 @@ class InstanceWriteLock:
             pass
 
 
+def replace_instance_dir(root=None):
+    """Remove everything in instance/ except the write lock guarding the swap.
+
+    `pull --force` and `character init --force` replace the directory. Removing
+    the directory itself would delete `WRITE_LOCK` mid-command: the holder would
+    lose the file it is protecting, and a third writer could acquire the absent
+    lock while the holder is still writing. Emptying the contents keeps it.
+    """
+    root = Path(root or INSTANCE_DIR)
+    for child in root.iterdir():
+        if child.name == WRITE_LOCK:
+            continue
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 # --------------------------------------------------------------------------
 # comparison
 # --------------------------------------------------------------------------
@@ -1824,7 +1842,7 @@ def cmd_pull(config, args):
     if replacing:
         # Replace, do not merge: a stale file from an older layout would
         # otherwise sit next to the new character layer and confuse the next reader.
-        shutil.rmtree(INSTANCE_DIR)
+        replace_instance_dir(INSTANCE_DIR)
 
     model = build_live_model(settings, schedule)
     if model["settings"] is None:
@@ -4013,7 +4031,7 @@ def cmd_character(config, args):
             raise ToolError("instance/ already exists (%s). Refusing to overwrite: re-run with "
                             "--force to replace it." % describe_instance(root))
         if root.exists():
-            shutil.rmtree(root)
+            replace_instance_dir(root)
 
         if args.source == "demo":
             source = REPO_ROOT / "examples" / "demo"
@@ -5464,7 +5482,7 @@ def build_parser():
     pull.add_argument("--force", action="store_true", help="replace an existing instance/")
     pull.add_argument("--allow-lossy", action="store_true",
                       help="tier 1: accept a partial capture and say what is lost")
-    pull.set_defaults(func=cmd_pull)
+    pull.set_defaults(func=cmd_pull, write_lock="pull")
 
     diff = sub.add_parser("diff", help="read-only drift report")
     diff.add_argument("--json", action="store_true",
@@ -5599,7 +5617,7 @@ def build_parser():
     char_init.add_argument("--from", dest="source", choices=("demo", "blank"), default="blank",
                            help="demo copies examples/demo; blank writes a placeholder station")
     char_init.add_argument("--force", action="store_true", help="replace an existing instance/")
-    char_init.set_defaults(func=cmd_character)
+    char_init.set_defaults(func=cmd_character, write_lock="character")
 
     char_persona = char_sub.add_parser("new-persona", help="scaffold a persona with all 18 fields")
     char_persona.add_argument("slug")
