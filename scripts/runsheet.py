@@ -1178,6 +1178,142 @@ def cmd_capabilities(config, args):
 
 
 # --------------------------------------------------------------------------
+# init: write .env in one step
+# --------------------------------------------------------------------------
+
+# Values that must never be echoed back: a dry run names the key, not the secret.
+ENV_SECRET_KEYS = ("SUBWAVE_ADMIN_PASS", "SUBWAVE_STATION_PASSWORD")
+
+ENV_LINE_RE = re.compile(r"^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s*=)(.*)$")
+
+
+def _masked_env_lines(values):
+    """The KEY=VALUE lines init would write, with secrets masked."""
+    lines = []
+    for key in Config.KEYS:
+        if key not in values:
+            continue
+        value = values[key]
+        if key in ENV_SECRET_KEYS and value:
+            value = "***"
+        lines.append("%s=%s" % (key, value))
+    return lines
+
+
+def _update_env_text(text, values):
+    """Replace the named KEY= lines in `text` and append any that are missing.
+
+    Everything else - comments, ordering, unrelated keys - is left alone, so a
+    hand-curated .env survives an init.
+    """
+    remaining = dict(values)
+    out = []
+    for raw in text.splitlines():
+        match = ENV_LINE_RE.match(raw)
+        if match and match.group(2) in remaining:
+            key = match.group(2)
+            out.append("%s%s=%s" % (match.group(1), key, remaining.pop(key)))
+        else:
+            out.append(raw)
+    if remaining:
+        if out and out[-1].strip():
+            out.append("")
+        for key in Config.KEYS:
+            if key in remaining:
+                out.append("%s=%s" % (key, remaining.pop(key)))
+        for key in list(remaining):
+            out.append("%s=%s" % (key, remaining.pop(key)))
+    return "\n".join(out) + "\n"
+
+
+def _init_values(config, args):
+    """Work out what init should write. Returns {KEY: value}."""
+    values = {}
+    tier1 = (
+        (args.base_url, "SUBWAVE_BASE_URL"),
+        (args.admin_user, "SUBWAVE_ADMIN_USER"),
+        (args.admin_pass, "SUBWAVE_ADMIN_PASS"),
+        (args.station_password, "SUBWAVE_STATION_PASSWORD"),
+    )
+    if args.host:
+        probe = Config(dotenv={}, environ={"SUBWAVE_HOST": args.host})
+        try:
+            found, note = discover_state_dirs(probe)
+        except (ToolError, ConfigError) as exc:
+            raise ToolError("could not probe %s: %s" % (args.host, exc))
+        if not found:
+            message = "no container on %s has a mounted settings.json" % args.host
+            if note:
+                message += " (the host said: %s)" % note
+            raise ToolError(message + ". Check: ssh %s docker ps" % args.host)
+        container, state_dir = found[0]
+        values["SUBWAVE_HOST"] = args.host
+        values["SUBWAVE_CONTAINER"] = container
+        values["SUBWAVE_STATE_DIR"] = state_dir
+        print("tier 2    found container %s, data directory %s" % (container, state_dir))
+        if len(found) > 1:
+            others = ", ".join("%s:%s" % pair for pair in found[1:])
+            print("          other candidates: %s" % others)
+    else:
+        base_url = args.base_url or config.base_url
+        if not base_url:
+            raise ConfigError(
+                "init needs a station: pass --host <ssh-address> for full host access, or "
+                "--base-url <url> for the HTTP-only tier.")
+        if not base_url.startswith(("http://", "https://")):
+            raise ConfigError(
+                "--base-url must start with http:// or https:// (got %r)" % base_url)
+        values["SUBWAVE_BASE_URL"] = base_url.rstrip("/")
+        print("tier 1    no host given: writing the HTTP-only settings")
+    for flag, key in tier1:
+        if flag:
+            values[key] = flag
+    return values
+
+
+def cmd_init(config, args):
+    """Write .env in one step: discover host access, or record an HTTP-only station."""
+    env_path = config.dotenv_path or (REPO_ROOT / ".env")
+    existing = load_dotenv(env_path)
+    populated = any(existing.get(key) for key in Config.KEYS)
+
+    values = _init_values(config, args)
+
+    if populated and not args.force:
+        print("would write %s:" % env_path)
+        for line in _masked_env_lines(values):
+            print("          %s" % line, flush=True)
+        raise ToolError(
+            ".env already holds a station (%s). Refusing to overwrite: re-run with --force "
+            "to update it." % env_path)
+
+    if env_path.is_file():
+        text = env_path.read_text(encoding="utf-8")
+    else:
+        example = REPO_ROOT / ".env.example"
+        if example.is_file():
+            text = example.read_text(encoding="utf-8")
+        else:
+            text = "# runsheet configuration. .env is gitignored; never commit it.\n"
+    _private_write(env_path, _update_env_text(text, values))
+
+    print("wrote     %s" % env_path)
+    for line in _masked_env_lines(values):
+        print("          %s" % line)
+
+    # Read the file back and prove the tier, rather than claiming the write landed.
+    written = Config(dotenv=load_dotenv(env_path), environ={})
+    tier, detail = detect_tier(written)
+    print("tier      %s" % TIER_LABEL[tier])
+    print("why       %s" % detail)
+    if written.base_url:
+        print("endpoint  %s" % written.base_url)
+    if tier == 1:
+        print("next      set SUBWAVE_HOST and re-run init for full reads, or run status")
+    return EXIT_OK
+
+
+# --------------------------------------------------------------------------
 # blocklist: the third config document, and the one the station's own backup
 # silently drops (backup/zip.ts INCLUDE_FILES lists jingles.json, jingles.m3u and
 # sfx.json, not blocklist.json). Ours is meant to be complete, so it carries it.
@@ -4719,6 +4855,16 @@ def build_parser():
         "--mock", action="store_true",
         help="run against the in-process mock station (tests/mock_station.py) instead of a live one")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    init = sub.add_parser(
+        "init", help="write .env in one step: discover host access, or record HTTP-only settings")
+    init.add_argument("--host", help="ssh address; discovers the controller container and state dir")
+    init.add_argument("--base-url", help="station admin API URL (tier 1)")
+    init.add_argument("--admin-user", help="admin HTTP Basic user (tier 1)")
+    init.add_argument("--admin-pass", help="admin HTTP Basic password (tier 1)")
+    init.add_argument("--station-password", help="listener station password (tier 1)")
+    init.add_argument("--force", action="store_true", help="update an existing populated .env")
+    init.set_defaults(func=cmd_init)
 
     status = sub.add_parser("status", help="tier, station, on-air state, repo sync")
     status.set_defaults(func=cmd_status)
