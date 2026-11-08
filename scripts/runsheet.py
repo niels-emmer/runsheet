@@ -251,13 +251,22 @@ def http_json(config, path, admin=False, station=False, method="GET", body=None,
 
 
 def ssh_run(config, remote_command, timeout=DEFAULT_TIMEOUT, binary=False, stdin=None):
-    """Run a command on the host. Returns CompletedProcess."""
+    """Run a command on the host. Returns CompletedProcess.
+
+    The child never inherits our stdin unless the caller passes one. `ssh`
+    without `-n` reads its stdin and forwards it to the remote command, so an
+    inherited fd 0 is not harmless: the MCP server's JSON-RPC stream lives
+    there, and a concurrent request would be eaten by ssh (the same bug as an
+    `ssh` inside a shell `while read` loop). `input` and `stdin` are mutually
+    exclusive, so exactly one is passed.
+    """
     if not config.host:
         raise ConfigError("SUBWAVE_HOST is not set")
     argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", config.host, remote_command]
+    stream = {"stdin": subprocess.DEVNULL} if stdin is None else {"input": stdin}
     try:
         return subprocess.run(argv, capture_output=True, text=not binary,
-                              input=stdin, timeout=timeout)
+                              timeout=timeout, **stream)
     except FileNotFoundError:
         raise ToolError("ssh is not installed or not on PATH")
     except subprocess.TimeoutExpired:
