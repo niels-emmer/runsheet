@@ -36,8 +36,10 @@ All notable changes to this project are documented here. The format is based on
   writes landed, the tool writes one audit entry (`<YYYY-MM-DD>-auto-apply-<HHMMSSZ>.md`) and adds its
   index row to `docs/applied.md`, naming the UTC time, the checkout commit, what actually differed
   (personas, shows, settings keys, character fields, grid days, override, blocklist entries and rules,
-  skills — compared against the station before the write, since apply always sends whole objects) and what
-  the read-back could and could not verify. The trail previously depended on someone remembering to type the entry, so it drifted from the
+  skills — compared against the station before the write, since apply always sends whole objects), what
+  the read-back could and could not verify (naming the 19 show fields tier 1 cannot read), and what a
+  `--prune` phase deleted or why it refused. The backup path is recorded home-relative (`~/...`), so a
+  committed entry never publishes the OS username of whoever ran the apply. The trail previously depended on someone remembering to type the entry, so it drifted from the
   station the first time a run was forgotten. A dry run and a failed verification write nothing, existing
   entries are never rewritten, and a checkout without `docs/` (an `instance/`-only fork) skips the write
   with a warning instead of failing an apply that already landed. Pinned by

@@ -2610,7 +2610,7 @@ def applied_entry_dir():
 def _cell(value):
     """One Markdown table cell. A pipe or a newline must not split the row."""
     text = " ".join(str(value).split())
-    return (text or "\u2014").replace("|", "\\|")
+    return (text or "—").replace("|", "\\|")
 
 
 def _capped_list(items, limit=8):
@@ -2802,9 +2802,10 @@ def describe_verification(tier, repo_blocklist, repo_skills):
         text = ("post-apply read-back passed: settings.json and schedule.json compared "
                 "field by field against the sent payload")
     else:
-        text = ("post-apply read-back passed: /api/schedule (grid and shows) plus the 4 "
-                "persona fields /api/personas exposes; the rest of settings and every "
-                "secret NOT verified")
+        text = ("post-apply read-back passed: /api/schedule (the grid, the override and "
+                "the 7 show fields it exposes) plus the 4 persona fields /api/personas "
+                "exposes; the other 19 show fields, the rest of settings and every secret "
+                "NOT verified")
     also = []
     if (repo_blocklist.get("entries") or repo_blocklist.get("rules")):
         also.append("blocklist")
@@ -2815,12 +2816,30 @@ def describe_verification(tier, repo_blocklist, repo_skills):
     return text
 
 
-def write_applied_entry(tier, changed, verified, backup_ref):
+def _backup_label(backup_ref):
+    """Home-relative and in backticks: this value is committed to git.
+
+    An absolute path would publish the OS username of whoever ran the apply.
+    """
+    if not backup_ref:
+        return "— (--no-backup)"
+    path = str(backup_ref)
+    try:
+        home = str(Path.home())
+        if path == home or path.startswith(home + os.sep):
+            path = "~" + path[len(home):]
+    except (OSError, RuntimeError):
+        pass
+    return "`%s`" % path
+
+
+def write_applied_entry(tier, changed, verified, backup_ref, prune=None):
     """Write one entry file and its index row after a verified apply.
 
     `changed` is the pre-write change set rendered by describe_changes, not the
     payload: apply sends whole objects, so the payload says nothing about what
-    actually differed.
+    actually differed. `prune` says what the destructive phase did (or why it
+    refused), because that is the one change with no undo.
 
     Never raises: the writes already landed and were proved, so a missing or
     unwritable docs/ tree must not turn a good apply into a failure. A fork run
@@ -2856,14 +2875,14 @@ def write_applied_entry(tier, changed, verified, backup_ref):
 
         title = "apply --yes at tier %d" % tier
         body = "\n".join((
-            "# %s \u2014 %s" % (stamp, title),
+            "# %s — %s" % (stamp, title),
             "",
             "- **Date:** %s" % stamp,
-            "- **Commit:** %s" % (run_commit() or "\u2014"),
-            "- **What changed:** %s" % changed,
-            "- **Backup ref:** %s" % (backup_ref or "\u2014 (--no-backup)"),
+            "- **Commit:** %s" % (run_commit() or "—"),
+            "- **What changed:** %s" % (changed + ("; " + prune if prune else "")),
+            "- **Backup ref:** %s" % _backup_label(backup_ref),
             "- **Verified by:** %s" % verified,
-            "- **Listener check:** \u2014 (not checked by apply)",
+            "- **Listener check:** — (not checked by apply)",
             "",
         ))
         entry_path.write_text(body, encoding="utf-8")
@@ -3094,32 +3113,40 @@ def cmd_apply(config, args):
               "of settings (and every secret) is unreadable at tier 1, so it was NOT verified")
     print("result    %d step(s) written; ids.lock.json updated" % (len(steps) + 1))
 
-    # The audit entry goes after the read-back and before prune: only a verified
-    # write earns one, and a prune that is later refused must not erase the fact
-    # that the writes landed.
-    write_applied_entry(tier, changed_text, verified_text, backup_ref)
-
-    # Prune last, after the writes and after verification: a failed write must
-    # never trigger a delete, and verification raising stops us before this line.
-    if args.prune:
-        plan = prune_plan(config, load_instance_model(), blocklist_lock,
-                          settings_now=prune_settings_before,
-                          schedule_now=prune_schedule_before)
-        print("prune     %d deletion(s) planned" % len(plan["items"]))
-        print_prune_plan(plan, dry_run=False)
-        if plan["hard"]:
-            raise ToolError(
-                "refusing to prune: %s. The writes above were applied; nothing was deleted."
-                % plan["hard"][0])
-        if plan["blocked"] and not args.force_prune:
-            raise ToolError(
-                "refusing to prune: %s. The writes above were applied; nothing was deleted. "
-                "Pass --force-prune to delete anyway." % plan["blocked"][0])
-        if not plan["items"]:
-            print("result    nothing to prune")
-            return EXIT_OK
-        deleted = run_prune(config, plan, args.force_prune)
-        print("result    %d deletion(s) done" % deleted)
+    # The entry is written after the prune phase, from a finally: prune is the
+    # one irreversible operation here, so it must be recorded, and a refusal
+    # must still record the writes that landed before it.
+    prune_text = None
+    try:
+        # Prune last, after the writes and after verification: a failed write
+        # must never trigger a delete, and verification raising stops us here.
+        if args.prune:
+            plan = prune_plan(config, load_instance_model(), blocklist_lock,
+                              settings_now=prune_settings_before,
+                              schedule_now=prune_schedule_before)
+            print("prune     %d deletion(s) planned" % len(plan["items"]))
+            print_prune_plan(plan, dry_run=False)
+            if plan["hard"]:
+                prune_text = "prune refused: %s; nothing deleted" % plan["hard"][0]
+                raise ToolError(
+                    "refusing to prune: %s. The writes above were applied; nothing was deleted."
+                    % plan["hard"][0])
+            if plan["blocked"] and not args.force_prune:
+                prune_text = ("prune refused: %s; nothing deleted"
+                              % plan["blocked"][0])
+                raise ToolError(
+                    "refusing to prune: %s. The writes above were applied; nothing was deleted. "
+                    "Pass --force-prune to delete anyway." % plan["blocked"][0])
+            if not plan["items"]:
+                prune_text = "prune: nothing to delete"
+                print("result    nothing to prune")
+            else:
+                deleted = run_prune(config, plan, args.force_prune)
+                prune_text = "prune deleted: %s" % _capped_list(
+                    ["%s %s" % (item["kind"], item["label"]) for item in plan["items"]], 6)
+                print("result    %d deletion(s) done" % deleted)
+    finally:
+        write_applied_entry(tier, changed_text, verified_text, backup_ref, prune_text)
     return EXIT_OK
 
 
