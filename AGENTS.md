@@ -159,6 +159,12 @@ every show and the whole grid do not. So `backup` copies the config **and** thos
   shows back would strip 19 fields per show. This is a safety property, not a warning: do not relax it.
 - `apply` also refuses when a payload still holds `__REDACTED__` (a secret was not rehydrated), when
   the station is mid-show without `--force-now`, and at tier 1 without `--no-backup`. It never deletes.
+- **`--mock` is a rehearsal room, not a tier.** It starts `tests/mock_station.py` in-process on loopback
+  and points the tool at it as a tier-2 station, so `status`, `pull`, `diff`, `apply`, `backup`, `restore`
+  and `onair` behave as they would live while nothing leaves the machine. It ignores `SUBWAVE_*` and `.env`
+  entirely, and the mock module is imported lazily so the live path never loads it. `apply --yes --mock`
+  still takes its backup, writes, and reads back to verify. Each invocation starts a fresh station from
+  `tests/fixtures/station.json`; nothing persists between commands.
 - Deletes run only when the human asks, never as a side effect of a sync.
 - Never run a second stack against the same state dir.
 
@@ -174,6 +180,7 @@ python3 -m unittest discover -s tests  # offline: the mock station is in-process
 
 python3 scripts/runsheet.py status    # tier, station, on-air state, repo sync
 python3 scripts/runsheet.py capabilities [--json]  # what this tier can do, without attempting it
+python3 scripts/runsheet.py --mock status   # any station command against the in-process mock (no network)
 python3 scripts/runsheet.py pull      # live -> instance/, secrets redacted (--force replaces)
 python3 scripts/runsheet.py diff      # drift vs live, exit 1 when drifted
 python3 scripts/runsheet.py backup    # config + assets, outside the repo
