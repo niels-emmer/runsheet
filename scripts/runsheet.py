@@ -3142,8 +3142,10 @@ def cmd_apply(config, args):
                 print("result    nothing to prune")
             else:
                 deleted = run_prune(config, plan, args.force_prune)
-                prune_text = "prune deleted: %s" % _capped_list(
-                    ["%s %s" % (item["kind"], item["label"]) for item in plan["items"]], 6)
+                # Every deleted item, uncapped: the entry is the only record of
+                # an operation with no undo.
+                prune_text = "prune deleted: %s" % ", ".join(
+                    "%s %s" % (item["kind"], item["label"]) for item in plan["items"])
                 print("result    %d deletion(s) done" % deleted)
     finally:
         write_applied_entry(tier, changed_text, verified_text, backup_ref, prune_text)
