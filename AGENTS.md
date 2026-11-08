@@ -124,6 +124,14 @@ every show and the whole grid do not. So `backup` copies the config **and** thos
   costs seconds of stream interruption, so bundle such changes. Passwords and the rest apply live.
 - Never commit instance data. `instance/` and `.env` are gitignored, and `scripts/check-secrets.sh`
   blocks live values from entering a commit.
+- **One writer at a time in a checkout.** `apply`, `restore`, and the `character`/`blocklist` authoring
+  commands take an advisory lock at `instance/.runsheet.lock` for their duration, so two agent sessions
+  cannot interleave an apply with another write or race on `ids.lock.json`. The lock records the pid,
+  command, start time and host; a contender fails fast and names the holder instead of hanging. A lock
+  left by a crashed process is recovered once its pid is gone (a foreign-host or unreadable lock is never
+  stolen); delete `instance/.runsheet.lock` by hand only when no other command is running. Read-only
+  commands (`status`, `diff`, `validate`) take no lock. `pull` and `character init` replace the whole
+  directory, so they are not behind it.
 - **Blocklist rule identity is a slug the toolkit owns, mapped to a station uuid in
   `instance/blocklist.lock.json`.** The station mints the uuid; without the lock every apply would POST a
   new one for the same rule, filling `BLOCKLIST_RULES_MAX` (50) with near-duplicates while `matchCount`
