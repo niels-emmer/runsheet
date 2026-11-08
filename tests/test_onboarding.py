@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 
 import mock_station
-from test_runsheet import load_tool
+from test_runsheet import load_tool, scrub_station_environment
 
 runsheet = load_tool()
 
@@ -45,8 +45,7 @@ class OnboardingTestCase(unittest.TestCase):
 
         self._saved_environ = dict(os.environ)
         self.addCleanup(self._restore_environ)
-        for key in ("SUBWAVE_HOST", "SUBWAVE_STATE_DIR", "SUBWAVE_CONTAINER"):
-            os.environ.pop(key, None)
+        scrub_station_environment()
 
     def _restore_environ(self):
         os.environ.clear()

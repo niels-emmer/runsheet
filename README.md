@@ -138,6 +138,14 @@ Then open your agent in that directory — Claude Code, Codex, OpenCode, or anyt
 `AGENTS.md` — and ask for the station's status. Nothing to install: the tool is one Python file with no
 dependencies.
 
+Working from many checkouts against one station? Keep the credentials in one file outside all of them,
+e.g. `~/.config/runsheet/station.env` (same `KEY=VALUE` lines as `.env.example`), and export
+`RUNSHEET_ENV_FILE=~/.config/runsheet/station.env`. Every ephemeral worktree then loads its `SUBWAVE_*`
+values from that file and needs no `.env` of its own. Precedence: variables already exported in the
+environment win, then the file named by `RUNSHEET_ENV_FILE`, then `./.env` — and a named file replaces
+`./.env` rather than merging with it, so two stations' credentials cannot be mixed. A path that is set
+but missing is a configuration error, not a silent fallback.
+
 No station yet? `character init --from demo` writes a small fictional station into `instance/`, so you can
 walk the whole flow — edit, validate, dry run — without one.
 

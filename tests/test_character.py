@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 
 import mock_station
-from test_runsheet import load_tool
+from test_runsheet import load_tool, scrub_station_environment
 
 runsheet = load_tool()
 
@@ -34,8 +34,7 @@ class CharacterTestCase(unittest.TestCase):
 
         self._saved_environ = dict(os.environ)
         self.addCleanup(self._restore_environ)
-        for key in ("SUBWAVE_HOST", "SUBWAVE_STATE_DIR"):
-            os.environ.pop(key, None)
+        scrub_station_environment()
         os.environ.update({
             "SUBWAVE_BASE_URL": self.server.url,
             "SUBWAVE_ADMIN_USER": "mock-admin",
@@ -278,6 +277,56 @@ class RoundTripTests(CharacterTestCase):
         self.assertFalse(assigned.startswith("s_local_"), "the station must assign a real id")
         lock = json.loads((self.root() / "ids.lock.json").read_text())
         self.assertEqual(lock["shows"]["harbour-mornings"], assigned)
+
+
+class SharedEnvFileIsScrubbedTests(CharacterTestCase):
+    """A developer's RUNSHEET_ENV_FILE must not let the suite reach a station.
+
+    setUpClass runs before setUp, so the variable is in os.environ when the
+    fixture starts - exactly the state an orchestrator creates by exporting it.
+    The fixture's scrub is what keeps apply at tier 1; without it Config() would
+    take SUBWAVE_HOST and SUBWAVE_STATE_DIR from the shared file and apply would
+    ssh to the live host.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.shared_dir = Path(tempfile.mkdtemp())
+        cls.shared_env = cls.shared_dir / "station.env"
+        cls.shared_env.write_text(
+            "SUBWAVE_HOST=live@station\nSUBWAVE_STATE_DIR=/var/sub-wave\n",
+            encoding="utf-8")
+        cls._saved_env_file = os.environ.get(runsheet.ENV_FILE_VAR)
+        os.environ[runsheet.ENV_FILE_VAR] = str(cls.shared_env)
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._saved_env_file is None:
+            os.environ.pop(runsheet.ENV_FILE_VAR, None)
+        else:
+            os.environ[runsheet.ENV_FILE_VAR] = cls._saved_env_file
+        shutil.rmtree(cls.shared_dir, True)
+
+    def test_apply_stays_tier_1_and_never_touches_ssh(self):
+        self.assertNotIn(runsheet.ENV_FILE_VAR, os.environ,
+                         "the fixture must scrub the shared credentials pointer")
+
+        def refuse(*args, **kwargs):
+            raise AssertionError("the suite is offline: apply must not ssh")
+
+        saved = runsheet.ssh_run, runsheet.ssh_probe
+        runsheet.ssh_run = refuse
+        runsheet.ssh_probe = refuse
+        self.addCleanup(lambda: setattr(runsheet, "ssh_run", saved[0]))
+        self.addCleanup(lambda: setattr(runsheet, "ssh_probe", saved[1]))
+
+        self.run_cli("character", "init")
+        before = len(self.server.station.requests)
+        code, output = self.run_cli("apply")
+        self.assertEqual(code, 0, output)
+        self.assertIn("dry run", output)
+        self.assertIn("0 requests sent", output)
+        self.assertEqual(len(self.server.station.requests), before)
 
 
 if __name__ == "__main__":

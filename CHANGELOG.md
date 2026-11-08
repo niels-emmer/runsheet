@@ -25,6 +25,13 @@ All notable changes to this project are documented here. The format is based on
   it. A real `apply --yes --mock` executes the full pre-write backup, write, and read-back verification and
   prints what a live apply would, which is how a multi-field change can be rehearsed before it touches a
   station. See [`tests/test_mock_mode.py`](tests/test_mock_mode.py).
+- **`RUNSHEET_ENV_FILE` loads credentials from outside the checkout.** Point it at a `KEY=VALUE` file
+  and runsheet reads `SUBWAVE_*` from there instead of `./.env`, so an orchestrator running many ephemeral
+  git worktrees against one station no longer has to recreate `.env` in each. Precedence is exported
+  variables, then the named file, then `./.env`; the named file replaces `.env` rather than merging with
+  it, and a set-but-missing path fails as a configuration error instead of silently falling back.
+  Documented in `.env.example` and the README's "Getting started"; pinned by
+  [`tests/test_env_file.py`](tests/test_env_file.py).
 - **Tier 2 is reachable from a bare ssh host.** `status` at tier 1 now probes the host it is given: one
   read-only ssh round trip lists the running containers, inspects their mounts, and reports the first
   mount that already contains a `settings.json`, printing the exact `SUBWAVE_CONTAINER=` and

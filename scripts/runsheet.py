@@ -11,6 +11,8 @@ Every command prints the tier it is running at. Writes are explicit and dry firs
 Configuration comes from the environment, with a repo-root .env as a fallback:
   SUBWAVE_BASE_URL, SUBWAVE_ADMIN_USER, SUBWAVE_ADMIN_PASS,
   SUBWAVE_STATION_PASSWORD, SUBWAVE_HOST, SUBWAVE_STATE_DIR, SUBWAVE_CONTAINER
+Setting RUNSHEET_ENV_FILE in the real environment names a credentials file to
+read instead of ./.env, so many checkouts can share one file.
 """
 
 import argparse
@@ -35,6 +37,8 @@ INSTANCE_DIR = REPO_ROOT / "instance"
 DEFAULT_CONTAINER = "sub-wave-controller"
 DEFAULT_TIMEOUT = 20
 SENTINEL = "__REDACTED__"
+# Names a credentials file outside the checkout; see resolve_dotenv().
+ENV_FILE_VAR = "RUNSHEET_ENV_FILE"
 
 # The station's own id contract (controller/src/routes/public.ts mirrors
 # settings.ID_RE): lowercase alphanumerics and underscores, 3-32 chars. No
@@ -107,6 +111,30 @@ def load_dotenv(path):
     return values
 
 
+def resolve_dotenv(environ=None):
+    """Return (values, path) for the credentials file this process should use.
+
+    Precedence, highest first: the real environment, then the file named by
+    RUNSHEET_ENV_FILE, then the repo's .env. The named file REPLACES .env
+    rather than merging with it: one shared credentials file must be the only
+    source, so a stale checkout-local .env cannot quietly supply another
+    station's password. A path that is set but missing is an error, not a
+    silent fallback.
+    """
+    environ = os.environ if environ is None else environ
+    named = (environ.get(ENV_FILE_VAR) or "").strip()
+    if not named:
+        path = REPO_ROOT / ".env"
+        return load_dotenv(path), path
+    path = Path(named).expanduser()
+    if not path.is_file():
+        raise ConfigError(
+            "%s is set to %r, which is not a file. Fix the path, or unset it to "
+            "fall back to .env." % (ENV_FILE_VAR, named)
+        )
+    return load_dotenv(path), path
+
+
 class Config:
     """Environment plus .env fallback. Real environment variables always win."""
 
@@ -120,9 +148,13 @@ class Config:
         "SUBWAVE_CONTAINER",
     )
 
-    def __init__(self, dotenv=None, environ=None):
-        dotenv = dotenv if dotenv is not None else load_dotenv(REPO_ROOT / ".env")
+    def __init__(self, dotenv=None, environ=None, dotenv_path=None):
         environ = environ if environ is not None else os.environ
+        if dotenv is None:
+            dotenv, dotenv_path = resolve_dotenv(environ)
+        # The file the values came from, so guidance names the file actually in
+        # use instead of always saying .env - which RUNSHEET_ENV_FILE never reads.
+        self.dotenv_path = dotenv_path
         self.values = {}
         for key in self.KEYS:
             value = environ.get(key)
@@ -137,12 +169,22 @@ class Config:
         self.admin_pass = self.values["SUBWAVE_ADMIN_PASS"]
         self.station_password = self.values["SUBWAVE_STATION_PASSWORD"]
 
+    def credentials_file(self):
+        """The credentials file to name when telling an operator where a value goes."""
+        if self.dotenv_path is not None and self.dotenv_path != REPO_ROOT / ".env":
+            return "%s (%s)" % (self.dotenv_path, ENV_FILE_VAR)
+        return ".env"
+
+    def missing_base_url_help(self):
+        """Advice for a missing SUBWAVE_BASE_URL, naming the file actually read."""
+        if self.credentials_file() == ".env":
+            return ("Copy .env.example to .env and fill it in, "
+                    "or export it in the environment.")
+        return "Add it to %s, or export it in the environment." % self.credentials_file()
+
     def require_http(self):
         if not self.base_url:
-            raise ConfigError(
-                "SUBWAVE_BASE_URL is not set. Copy .env.example to .env and fill it in, "
-                "or export it in the environment."
-            )
+            raise ConfigError("SUBWAVE_BASE_URL is not set. " + self.missing_base_url_help())
         if not self.base_url.startswith(("http://", "https://")):
             raise ConfigError(
                 "SUBWAVE_BASE_URL must start with http:// or https:// (got %r)" % self.base_url
@@ -313,7 +355,7 @@ def _print_tier2_help(config):
         return
     container, state_dir = found[0]
     print("tier 2    found container %s, data directory %s" % (container, state_dir))
-    print("          add to .env:")
+    print("          add to %s:" % config.credentials_file())
     print("            SUBWAVE_CONTAINER=%s" % container)
     print("            SUBWAVE_STATE_DIR=%s" % state_dir)
     if len(found) > 1:
@@ -983,8 +1025,7 @@ def cmd_status(config, args):
     tier, detail = detect_tier(config)
     if tier == 1 and not config.base_url:
         raise ConfigError(
-            "tier 1 needs SUBWAVE_BASE_URL. Copy .env.example to .env and fill it in, "
-            "or export it in the environment."
+            "tier 1 needs SUBWAVE_BASE_URL. " + config.missing_base_url_help()
         )
 
     settings = schedule = None
@@ -4916,7 +4957,8 @@ def main(argv=None):
         print("mock      %s (in-process tests/mock_station.py; no network, no host)"
               % mock.server.url, flush=True)
     try:
-        return args.func(mock.config if mock else Config(), args)
+        config = mock.config if mock else Config()
+        return args.func(config, args)
     except ConfigError as exc:
         print("runsheet: %s" % exc, file=sys.stderr)
         return EXIT_CONFIG

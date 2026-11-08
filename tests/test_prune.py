@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import mock_station
-from test_runsheet import load_tool
+from test_runsheet import load_tool, scrub_station_environment
 
 runsheet = load_tool()
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "station.json"
@@ -33,8 +33,7 @@ class PruneTestCase(unittest.TestCase):
 
         self._saved_environ = dict(os.environ)
         self.addCleanup(self._restore_environ)
-        for key in ("SUBWAVE_HOST", "SUBWAVE_STATE_DIR"):
-            os.environ.pop(key, None)
+        scrub_station_environment()
         os.environ.update({
             "SUBWAVE_BASE_URL": self.server.url,
             "SUBWAVE_ADMIN_USER": "mock-admin",
