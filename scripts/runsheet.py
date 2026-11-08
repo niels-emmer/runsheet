@@ -346,31 +346,47 @@ def discover_state_dirs(config):
     return found, (note[-1] if note else "")
 
 
-def _print_tier2_help(config):
-    """At tier 1, say how to reach tier 2 - and probe when we already can."""
+def _tier2_help_state(config):
+    """At tier 1, how to reach tier 2, as data (the text printer formats it)."""
     if not config.host:
+        return {"state": "not-configured", "host": None}
+    try:
+        found, note = discover_state_dirs(config)
+    except (ToolError, ConfigError) as exc:
+        return {"state": "probe-failed", "host": config.host, "error": str(exc)}
+    if not found:
+        return {"state": "none-found", "host": config.host, "note": note or None}
+    return {"state": "found", "host": config.host, "note": note or None,
+            "candidates": [{"container": container, "stateDir": state_dir}
+                           for container, state_dir in found]}
+
+
+def _print_tier2_help(config, state=None):
+    """At tier 1, say how to reach tier 2 - and probe when we already can."""
+    state = state or _tier2_help_state(config)
+    if state["state"] == "not-configured":
         print("tier 2    not configured: no host access, so host and show details are trimmed")
         print("          set SUBWAVE_HOST=<you>@<machine> and run status again: it finds the")
         print("          controller container and its data directory for you")
         return
-    try:
-        found, note = discover_state_dirs(config)
-    except (ToolError, ConfigError) as exc:
-        print("tier 2    could not probe %s: %s" % (config.host, exc))
+    if state["state"] == "probe-failed":
+        print("tier 2    could not probe %s: %s" % (config.host, state["error"]))
         return
-    if not found:
+    if state["state"] == "none-found":
         print("tier 2    no container on %s has a mounted settings.json" % config.host)
-        if note:
-            print("          the host said: %s" % note)
+        if state["note"]:
+            print("          the host said: %s" % state["note"])
         print("          check: ssh %s docker ps" % config.host)
         return
-    container, state_dir = found[0]
+    container = state["candidates"][0]["container"]
+    state_dir = state["candidates"][0]["stateDir"]
     print("tier 2    found container %s, data directory %s" % (container, state_dir))
     print("          add to %s:" % config.credentials_file())
     print("            SUBWAVE_CONTAINER=%s" % container)
     print("            SUBWAVE_STATE_DIR=%s" % state_dir)
-    if len(found) > 1:
-        others = ", ".join("%s:%s" % pair for pair in found[1:])
+    if len(state["candidates"]) > 1:
+        others = ", ".join("%s:%s" % (item["container"], item["stateDir"])
+                           for item in state["candidates"][1:])
         print("          other candidates: %s" % others)
 
 
@@ -1074,6 +1090,7 @@ def cmd_status(config, args):
     sync = _sync_state(config, tier, settings, schedule)
 
     if as_json:
+        tier2 = _tier2_help_state(config) if tier == 1 else None
         station_payload = None
         if station:
             station_payload = {"name": station}
@@ -1113,6 +1130,7 @@ def cmd_status(config, args):
             "reads": "full" if settings is not None else "trimmed",
             "backup": "complete" if settings is not None else "refused",
             "sync": sync,
+            "tier2": tier2,
         })
         return EXIT_ERROR if api_failed else EXIT_OK
 
@@ -1783,16 +1801,23 @@ def cmd_diff(config, args):
     live = build_live_model(settings, schedule)
 
     report = compare_models(repo, live)
+    if not as_json:
+        print("direction instance/ -> live")
+        print_diff(report)
     repo_blocklist = load_repo_blocklist()
     live_blocklist = blocklist_to_repo(fetch_blocklist(config), json.loads(
         (INSTANCE_DIR / "ids.lock.json").read_text(encoding="utf-8")))
     blocklist_report = compare_blocklist(repo_blocklist, live_blocklist)
+    if not as_json:
+        print_blocklist_diff(blocklist_report)
     skills_report = {"added": [], "removed": [], "changed": [], "unchanged": []}
     if skills_root().is_dir():
         # The REAL tier, not a hardcoded 1: the API path returns the whole catalog
         # including built-ins, which are never captured, so comparing against it
         # reported every built-in as removed and every custom as changed.
         skills_report = compare_skills(load_repo_skills(), load_live_skills(config, tier))
+        if not as_json:
+            print_skill_diff(skills_report)
     count = drift_count(report)
     count += sum(len(blocklist_report[kind][label]) for kind in ("entries", "rules")
                  for label in ("added", "removed", "changed"))
@@ -1803,11 +1828,6 @@ def cmd_diff(config, args):
                    _diff_payload(report, blocklist_report, skills_report, tier, False, count))
         return EXIT_OK if count == 0 else EXIT_DRIFT
 
-    print("direction instance/ -> live")
-    print_diff(report)
-    print_blocklist_diff(blocklist_report)
-    if skills_root().is_dir():
-        print_skill_diff(skills_report)
     print("result    %s" % ("in sync" if count == 0 else "%d change(s)" % count))
     return EXIT_OK if count == 0 else EXIT_DRIFT
 
@@ -2112,13 +2132,22 @@ def diff_trimmed(config, repo, as_json=False):
     report["character"] = {"changed": [], "unchanged": True}
     report["override"] = {"unchanged": repo.get("override") == schedule.get("override"),
                           "repo": repo.get("override"), "live": schedule.get("override")}
+    note = ("trimmed comparison: 14 persona fields and 19 show fields are not "
+            "readable at tier 1, so they cannot drift here")
+    if not as_json:
+        print("note      %s" % note)
+        print_diff(report)
 
     live_blocklist = blocklist_to_repo(fetch_blocklist(config), json.loads(
         (INSTANCE_DIR / "ids.lock.json").read_text(encoding="utf-8")))
     blocklist_report = compare_blocklist(load_repo_blocklist(), live_blocklist)
+    if not as_json:
+        print_blocklist_diff(blocklist_report)
     skills_report = {"added": [], "removed": [], "changed": [], "unchanged": []}
     if skills_root().is_dir():
         skills_report = compare_skills(load_repo_skills(), load_live_skills(config, 1))
+        if not as_json:
+            print_skill_diff(skills_report)
     count = (len(report["personas"]["added"]) + len(report["personas"]["removed"])
              + len(report["personas"]["changed"]) + len(report["shows"]["added"])
              + len(report["shows"]["removed"]) + len(report["shows"]["changed"])
@@ -2129,19 +2158,12 @@ def diff_trimmed(config, repo, as_json=False):
                  for label in ("added", "removed", "changed"))
     count += sum(len(skills_report[label]) for label in ("added", "removed", "changed"))
 
-    note = ("trimmed comparison: 14 persona fields and 19 show fields are not "
-            "readable at tier 1, so they cannot drift here")
     if as_json:
         _emit_json("diff", count == 0,
                    _diff_payload(report, blocklist_report, skills_report, 1, True, count,
                                  [note]))
         return EXIT_OK if count == 0 else EXIT_DRIFT
 
-    print("note      %s" % note)
-    print_diff(report)
-    print_blocklist_diff(blocklist_report)
-    if skills_root().is_dir():
-        print_skill_diff(skills_report)
     print("result    %s" % ("in sync on the readable fields only (not a full match)"
                             if count == 0
                             else "%d change(s) in the readable fields" % count))

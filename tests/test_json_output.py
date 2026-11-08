@@ -86,6 +86,7 @@ class StatusJsonTests(unittest.TestCase):
         self.assertEqual(payload["reads"], "trimmed")
         self.assertEqual(payload["backup"], "refused")
         self.assertEqual(payload["sync"]["state"], "no-instance")
+        self.assertEqual(payload["tier2"]["state"], "not-configured")
 
     def test_a_failed_station_call_sets_ok_false(self):
         runsheet.http_json = lambda *a, **kw: (503, {})
@@ -108,6 +109,36 @@ class StatusJsonTests(unittest.TestCase):
         self.assertFalse(document["ok"])
         self.assertIsNone(document["payload"])
         self.assertIn("SUBWAVE_BASE_URL", document["error"])
+
+    def test_tier_two_discovery_is_structured(self):
+        os.environ["SUBWAVE_HOST"] = "me@host"
+        saved = runsheet.discover_state_dirs
+        runsheet.discover_state_dirs = lambda config: (
+            [("sub-wave-controller", "/var/sub-wave"), ("other", "/srv")], "")
+        try:
+            code, document, _ = run_json("status", "--json")
+        finally:
+            runsheet.discover_state_dirs = saved
+        self.assertEqual(code, 0)
+        tier2 = document["payload"]["tier2"]
+        self.assertEqual(tier2["state"], "found")
+        self.assertEqual(tier2["candidates"], [
+            {"container": "sub-wave-controller", "stateDir": "/var/sub-wave"},
+            {"container": "other", "stateDir": "/srv"},
+        ])
+
+    def test_tier_two_discovery_none_found_carries_the_host_note(self):
+        os.environ["SUBWAVE_HOST"] = "me@host"
+        saved = runsheet.discover_state_dirs
+        runsheet.discover_state_dirs = lambda config: ([], "docker: command not found")
+        try:
+            code, document, _ = run_json("status", "--json")
+        finally:
+            runsheet.discover_state_dirs = saved
+        self.assertEqual(code, 0)
+        tier2 = document["payload"]["tier2"]
+        self.assertEqual(tier2["state"], "none-found")
+        self.assertEqual(tier2["note"], "docker: command not found")
 
 
 class StatusSyncJsonTests(unittest.TestCase):
@@ -171,7 +202,7 @@ class StatusSyncJsonTests(unittest.TestCase):
         self.assertIn("diff", sync["detail"])
 
 
-class DiffJsonTests(unittest.TestCase):
+class DiffJsonFixture(unittest.TestCase):
     def setUp(self):
         self.server = mock_station.start_mock()
         self.addCleanup(self.server.stop)
@@ -227,6 +258,8 @@ class DiffJsonTests(unittest.TestCase):
         code, _, err = run_cli("pull", "--force")
         self.assertEqual(code, 0, err)
 
+
+class DiffJsonTests(DiffJsonFixture):
     def test_a_clean_capture_has_no_differences(self):
         self.pull()
         code, document, err = run_json("diff", "--json")
@@ -281,6 +314,71 @@ class DiffJsonTests(unittest.TestCase):
         code, document, err = run_json("diff", "--json")
         self.assertEqual(code, 1, err)
         self.assertIn("0", document["payload"]["changes"]["grid"]["changedDays"])
+
+
+class TextDiffOrderingTests(DiffJsonFixture):
+    """Text mode must keep printing drift it already computed when a later fetch fails."""
+
+    def test_drift_is_printed_before_a_later_fetch_fails(self):
+        self.pull()
+        saved = runsheet.fetch_blocklist
+
+        def fail(config):
+            raise runsheet.ToolError("blocklist fetch failed")
+
+        runsheet.fetch_blocklist = fail
+        try:
+            code, output, err = run_cli("diff")
+        finally:
+            runsheet.fetch_blocklist = saved
+        self.assertEqual(code, runsheet.EXIT_ERROR)
+        self.assertIn("direction instance/ -> live", output)
+        self.assertIn("personas", output)
+        self.assertIn("blocklist fetch failed", err)
+
+
+class Tier1DiffJsonTests(DiffJsonFixture):
+    """A tier-1 diff is always marked trimmed; ok only means the readable fields match."""
+
+    def setUp(self):
+        super().setUp()
+        runsheet.detect_tier = lambda config, probe=None: (1, "mock")
+
+    def pull_tier1(self):
+        code, _, err = run_cli("pull", "--allow-lossy", "--force")
+        self.assertEqual(code, 0, err)
+
+    def edit_first_grid_cell(self):
+        path = runsheet.INSTANCE_DIR / "character" / "schedule.json"
+        schedule = json.loads(path.read_text(encoding="utf-8"))
+        current = schedule["schedule"]["0"][0]
+        replacement = next(cell for cell in schedule["schedule"]["0"]
+                           if cell and cell != current)
+        schedule["schedule"]["0"][0] = replacement
+        path.write_text(json.dumps(schedule, indent=2), encoding="utf-8")
+
+    def test_a_clean_tier_one_diff_is_trimmed_not_a_full_match(self):
+        self.pull_tier1()
+        code, document, err = run_json("diff", "--json")
+        self.assertEqual(code, 0, err)
+        self.assertTrue(document["ok"])
+        payload = document["payload"]
+        self.assertEqual(payload["tier"], 1)
+        self.assertTrue(payload["trimmed"])
+        self.assertTrue(any("trimmed comparison" in note for note in payload["notes"]))
+        self.assertEqual(payload["count"], 0)
+
+    def test_a_tier_one_drift_is_not_ok_and_still_says_trimmed(self):
+        self.pull_tier1()
+        self.edit_first_grid_cell()
+        code, document, err = run_json("diff", "--json")
+        self.assertEqual(code, runsheet.EXIT_DRIFT, err)
+        self.assertFalse(document["ok"])
+        payload = document["payload"]
+        self.assertEqual(payload["tier"], 1)
+        self.assertTrue(payload["trimmed"])
+        self.assertTrue(any("trimmed comparison" in note for note in payload["notes"]))
+        self.assertIn("0", payload["changes"]["grid"]["changedDays"])
 
 
 class ValidateJsonTests(unittest.TestCase):

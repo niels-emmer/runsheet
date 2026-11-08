@@ -53,8 +53,9 @@ All notable changes to this project are documented here. The format is based on
   the formatted report — an envelope of `command`, `ok` and a command-specific `payload` — so an agent or
   orchestrator can decide whether a diff is safe and whether validation passed without parsing prose.
   The default text output and the exit codes are unchanged. A failed command still emits a document
-  (`ok: false`, `payload: null`, `error`) so stdout is always parseable under `--json`. The schema is
-  documented in `AGENTS.md` and the README appendix, and
+  (`ok: false`, `payload: null`, `error`) so stdout is always parseable under `--json`. `status` also
+  carries the tier-2 discovery result (`tier2`) rather than dropping the step text mode prints. The
+  schema is documented in `AGENTS.md` and the README appendix, and
   [`tests/test_json_output.py`](tests/test_json_output.py) pins all three.
 - **Tier 2 is reachable from a bare ssh host.** `status` at tier 1 now probes the host it is given: one
   read-only ssh round trip lists the running containers, inspects their mounts, and reports the first
