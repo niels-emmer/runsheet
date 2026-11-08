@@ -59,7 +59,7 @@ These are deliberate, documented trade-offs rather than oversights:
    compensates by reading those separately, but anything you restore from a stock export
    will still be missing them.
 5. **On-air actions are ephemeral.** `onair` changes what is playing now and is not recorded
-   in git or in `pull`/`diff`/`apply`. `docs/applied.md` is a human-authored audit trail, not
+   in git or in `pull`/`diff`/`apply`. `docs/applied/` is a human-authored audit trail, not
    an enforced log.
 6. **Some settings apply only on a mixer restart** (`privacy.listenerAuth`, `stream.maxListeners`,
    `opus`, `aac`). A restart costs seconds of stream interruption; the toolkit tells you which
