@@ -214,6 +214,15 @@ python3 scripts/runsheet.py character edit-persona|edit-show <slug> --set FIELD=
 python3 scripts/runsheet.py apply     # DRY RUN by default; --yes performs the writes
 ```
 
+`status`, `diff` and `validate` also take `--json`: one JSON document on stdout instead of the formatted
+report, additive to the default text. The envelope is `{"command", "ok", "payload"}`; `payload` is
+command-specific — `status` (`tier`, `tierLabel`, `tierDetail`, `endpoint`, `apiError`, `station`,
+`onAir`, `config`, `reads`, `backup`, `sync`), `diff` (`tier`, `direction`, `trimmed`, `count`, `notes`,
+`changes` with `personas`/`shows` added-removed-changed, `grid.changedDays`, `settings.changed`,
+`character`, `override`, `blocklist`, `skills`), and `validate` (`dir`, `errors`, `warnings`,
+`unreadable`, `issues`, `counts`). Exit codes are unchanged: `diff` still exits 1 on drift and
+`validate` 1 on errors.
+
 ## Which procedure to load
 
 `skills/<name>/SKILL.md` holds the rehearsed procedures and is the only copy of them. All three named agents

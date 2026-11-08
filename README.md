@@ -262,6 +262,14 @@ talk over the music, and `--sfx` to play an effect first), `segment`, `skip`, `r
 to take a result other than the top one), `sfx` and `jingle`. `skip` additionally needs `--expect-id` or
 `--any-track`.
 
+`status`, `diff` and `validate` accept `--json`, which prints one JSON document on stdout instead of the
+formatted report — the same information, for a caller that must not parse prose. The shape is
+`{"command": ..., "ok": ..., "payload": {...}}`, and `payload` holds the command's own fields: `status`
+reports tier, endpoint, station, on-air state, config counts and repo-vs-live sync; `diff` reports the
+change count plus personas, shows, changed grid days, settings keys, character, override, blocklist and
+skills; `validate` reports the directory, errors, warnings, unreadable input, a combined `issues` list and
+counts. Exit codes do not change, so `diff` still exits 1 on drift and `validate` 1 on errors.
+
 Two directories are called `skills/`, and they are different things:
 
 - `skills/` at the top of the repo — the procedures your agent follows when it works here.
