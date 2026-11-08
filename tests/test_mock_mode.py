@@ -188,5 +188,31 @@ class LifecycleTests(MockModeTestCase):
         self.assertNotIn("Traceback", err)
 
 
+class MockAuditTests(MockModeTestCase):
+    def test_a_mock_apply_does_not_write_the_audit_trail(self):
+        # A rehearsal must not claim something landed on a station.
+        docs = self.tmp / "docs"
+        (docs / "applied").mkdir(parents=True)
+        doc = docs / "applied.md"
+        index = "| Date | Entry |\n| --- | --- |\n"
+        doc.write_text(index, encoding="utf-8")
+        saved = runsheet.APPLIED_DOC
+        runsheet.APPLIED_DOC = doc
+        self.addCleanup(lambda: setattr(runsheet, "APPLIED_DOC", saved))
+
+        code, out, err = self.run_cli("--mock", "pull", "--force")
+        self.assertEqual(code, 0, out + err)
+
+        code, out, err = self.run_cli(
+            "--mock", "apply", "--yes", "--force-now",
+            "--backup-dir", str(self.tmp / "backups"), environ=LIVE_ENV)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("audit     skipped", out)
+        self.assertIn("rehearsal", out)
+        self.assertEqual(doc.read_text(encoding="utf-8"), index,
+                         "a rehearsal must not append to the on-air trail")
+        self.assertEqual(list((docs / "applied").glob("*.md")), [])
+
+
 if __name__ == "__main__":
     unittest.main()
