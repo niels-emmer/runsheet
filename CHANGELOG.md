@@ -34,9 +34,10 @@ All notable changes to this project are documented here. The format is based on
   [`tests/test_env_file.py`](tests/test_env_file.py).
 - **`apply --yes` records itself in `docs/applied/`.** After the post-apply read-back proves the
   writes landed, the tool writes one audit entry (`<YYYY-MM-DD>-auto-apply-<HHMMSSZ>.md`) and adds its
-  index row to `docs/applied.md`, naming the UTC time, the checkout commit, what it sent (settings keys,
-  shows, grid cells, blocklist entries and rules, skills) and what the read-back could and could not
-  verify. The trail previously depended on someone remembering to type the entry, so it drifted from the
+  index row to `docs/applied.md`, naming the UTC time, the checkout commit, what actually differed
+  (personas, shows, settings keys, character fields, grid days, override, blocklist entries and rules,
+  skills — compared against the station before the write, since apply always sends whole objects) and what
+  the read-back could and could not verify. The trail previously depended on someone remembering to type the entry, so it drifted from the
   station the first time a run was forgotten. A dry run and a failed verification write nothing, existing
   entries are never rewritten, and a checkout without `docs/` (an `instance/`-only fork) skips the write
   with a warning instead of failing an apply that already landed. Pinned by
