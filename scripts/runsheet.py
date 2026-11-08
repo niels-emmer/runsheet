@@ -1032,7 +1032,13 @@ def print_diff(report):
 # commands
 # --------------------------------------------------------------------------
 
+def _emit_json(command, ok, payload):
+    """One JSON document on stdout, for a caller that must not parse prose."""
+    print(json.dumps({"command": command, "ok": bool(ok), "payload": payload}, indent=2))
+
+
 def cmd_status(config, args):
+    as_json = bool(getattr(args, "json", False))
     tier, detail = detect_tier(config)
     if tier == 1 and not config.base_url:
         raise ConfigError(
@@ -1058,15 +1064,60 @@ def cmd_status(config, args):
     else:
         api_failed = "SUBWAVE_BASE_URL not set"
 
+    active = (now or {}).get("activeShow") or {}
+    track = (now or {}).get("nowPlaying") or {}
+    station = (settings or {}).get("station") or ((now or {}).get("dj") or {}).get("station")
+    listeners = (now or {}).get("listeners") or {}
+    sync = _sync_state(config, tier, settings, schedule)
+
+    if as_json:
+        station_payload = None
+        if station:
+            station_payload = {"name": station}
+            if settings:
+                station_payload["timezone"] = settings.get("timezone")
+                station_payload["locale"] = settings.get("locale")
+        air = None
+        if now:
+            air = {
+                "show": active.get("name"),
+                "persona": (active.get("persona") or {}).get("name"),
+                "track": ({"title": track.get("title"), "artist": track.get("artist")}
+                          if track.get("title") else None),
+                "listeners": {"current": listeners.get("current"),
+                              "peak": listeners.get("peak")},
+                "streamOnline": bool(now.get("streamOnline")),
+            }
+        configuration = None
+        if settings is not None:
+            shows = schedule.get("shows") or []
+            cells = [cell for day in (schedule.get("schedule") or {}).values() for cell in day]
+            configuration = {
+                "personas": len(settings.get("personas") or []),
+                "shows": len(shows),
+                "gridCells": len(cells),
+                "gridFilled": sum(1 for cell in cells if cell),
+            }
+        _emit_json("status", api_failed is None, {
+            "tier": tier,
+            "tierLabel": TIER_LABEL[tier],
+            "tierDetail": detail,
+            "endpoint": config.base_url or None,
+            "apiError": api_failed,
+            "station": station_payload,
+            "onAir": air,
+            "config": configuration,
+            "reads": "full" if settings is not None else "trimmed",
+            "backup": "complete" if settings is not None else "refused",
+            "sync": sync,
+        })
+        return EXIT_ERROR if api_failed else EXIT_OK
+
     print("tier      %s" % TIER_LABEL[tier], flush=True)
     print("why       %s" % detail)
     print("endpoint  %s" % (config.base_url or "(not set)"))
     if tier == 1:
         _print_tier2_help(config)
-
-    active = (now or {}).get("activeShow") or {}
-    track = (now or {}).get("nowPlaying") or {}
-    station = (settings or {}).get("station") or ((now or {}).get("dj") or {}).get("station")
 
     if station:
         extra = ""
@@ -1080,7 +1131,6 @@ def cmd_status(config, args):
             print("on air    %s%s" % (active["name"], " - %s" % persona if persona else ""))
         if track.get("title"):
             print("playing   %s - %s" % (track.get("title"), track.get("artist", "?")))
-        listeners = now.get("listeners") or {}
         print("listeners %s now, peak %s" % (
             listeners.get("current", "?"), listeners.get("peak", "?")))
         print("stream    %s" % ("online" if now.get("streamOnline") else "offline"))
@@ -1099,29 +1149,35 @@ def cmd_status(config, args):
         print("reads     trimmed: 4 fields per persona, 7 of 26 per show, no schedule.json")
         print("backup    refused at tier 1: it could not restore the programming")
 
-    print("sync      %s" % _sync_line(config, tier, settings, schedule))
+    print("sync      %s" % sync["detail"])
     print("writes    apply is a dry run unless --yes; onair verbs need --yes too")
     return EXIT_ERROR if api_failed else EXIT_OK
 
 
-def _sync_line(config, tier, settings, schedule):
+def _sync_state(config, tier, settings, schedule):
+    """Repo-vs-live sync, structured so a caller does not parse the text line."""
     if not (INSTANCE_DIR / "ids.lock.json").is_file():
         if tier == 1:
             # A tier-1 pull of a live station is lossy and cannot be applied, so
             # pointing a newcomer at it is the dead end this line used to be.
-            return "no instance/ yet - tier 1 authors: runsheet.py character init"
-        return "no instance/ captured yet (run: runsheet.py pull)"
+            return {"state": "no-instance", "changes": None,
+                    "detail": "no instance/ yet - tier 1 authors: runsheet.py character init"}
+        return {"state": "no-instance", "changes": None,
+                "detail": "no instance/ captured yet (run: runsheet.py pull)"}
     if tier != 2 or settings is None:
-        return "cannot compare at tier 1 (trimmed reads)"
+        return {"state": "unavailable", "changes": None,
+                "detail": "cannot compare at tier 1 (trimmed reads)"}
     try:
         repo = load_instance_model()
         live = build_live_model(settings, schedule)
         count = drift_count(compare_models(repo, live))
     except (ToolError, ValueError, KeyError) as exc:
-        return "cannot compare instance/: %s" % exc
+        return {"state": "error", "changes": None,
+                "detail": "cannot compare instance/: %s" % exc}
     if count == 0:
-        return "in sync with instance/"
-    return "%d change(s) vs instance/ (run: runsheet.py diff)" % count
+        return {"state": "in-sync", "changes": 0, "detail": "in sync with instance/"}
+    return {"state": "drifted", "changes": count,
+            "detail": "%d change(s) vs instance/ (run: runsheet.py diff)" % count}
 
 
 # --------------------------------------------------------------------------
@@ -1683,39 +1739,72 @@ def pull_lossy(config):
     return settings, schedule, losses
 
 
+def _diff_payload(report, blocklist_report, skills_report, tier, trimmed, count, notes=None):
+    """The structured diff: hosts, shows, hour-of-week grid, settings fields."""
+    grid = report["grid"]
+    return {
+        "tier": tier,
+        "direction": "instance/ -> live",
+        "trimmed": bool(trimmed),
+        "count": count,
+        "notes": notes or [],
+        "changes": {
+            "personas": report["personas"],
+            "shows": report["shows"],
+            "grid": {"changedDays": grid["changed_days"],
+                     "unchanged": grid["unchanged"],
+                     "cells": grid["cells"]},
+            "settings": report["settings"],
+            "character": report["character"],
+            "override": report["override"],
+            "blocklist": blocklist_report,
+            "skills": skills_report,
+        },
+    }
+
+
 def cmd_diff(config, args):
+    as_json = bool(getattr(args, "json", False))
     tier, detail = detect_tier(config)
-    print("tier      %s" % TIER_LABEL[tier], flush=True)
+    if not as_json:
+        print("tier      %s" % TIER_LABEL[tier], flush=True)
 
     if not (INSTANCE_DIR / "ids.lock.json").is_file():
         raise ToolError("no instance/ to compare (run: runsheet.py pull)")
 
     repo = load_instance_model()
     if tier != 2:
-        return diff_trimmed(config, repo)
+        return diff_trimmed(config, repo, as_json=as_json)
     settings = json.loads(read_state_file(config, "settings.json"))
     schedule = json.loads(read_state_file(config, "schedule.json"))
     live = build_live_model(settings, schedule)
 
     report = compare_models(repo, live)
-    print("direction instance/ -> live")
-    print_diff(report)
     repo_blocklist = load_repo_blocklist()
     live_blocklist = blocklist_to_repo(fetch_blocklist(config), json.loads(
         (INSTANCE_DIR / "ids.lock.json").read_text(encoding="utf-8")))
     blocklist_report = compare_blocklist(repo_blocklist, live_blocklist)
-    print_blocklist_diff(blocklist_report)
     skills_report = {"added": [], "removed": [], "changed": [], "unchanged": []}
     if skills_root().is_dir():
         # The REAL tier, not a hardcoded 1: the API path returns the whole catalog
         # including built-ins, which are never captured, so comparing against it
         # reported every built-in as removed and every custom as changed.
         skills_report = compare_skills(load_repo_skills(), load_live_skills(config, tier))
-        print_skill_diff(skills_report)
     count = drift_count(report)
     count += sum(len(blocklist_report[kind][label]) for kind in ("entries", "rules")
                  for label in ("added", "removed", "changed"))
     count += sum(len(skills_report[label]) for label in ("added", "removed", "changed"))
+
+    if as_json:
+        _emit_json("diff", count == 0,
+                   _diff_payload(report, blocklist_report, skills_report, tier, False, count))
+        return EXIT_OK if count == 0 else EXIT_DRIFT
+
+    print("direction instance/ -> live")
+    print_diff(report)
+    print_blocklist_diff(blocklist_report)
+    if skills_root().is_dir():
+        print_skill_diff(skills_report)
     print("result    %s" % ("in sync" if count == 0 else "%d change(s)" % count))
     return EXIT_OK if count == 0 else EXIT_DRIFT
 
@@ -1985,7 +2074,7 @@ def take_backup(config, base_dir=None, state=None, with_library=False):
     return destination, manifest
 
 
-def diff_trimmed(config, repo):
+def diff_trimmed(config, repo, as_json=False):
     """Tier-1 comparison over the fields the API actually exposes."""
     status, personas = http_json(config, "/api/personas")
     status_schedule, schedule = http_json(config, "/api/schedule")
@@ -2021,17 +2110,12 @@ def diff_trimmed(config, repo):
     report["override"] = {"unchanged": repo.get("override") == schedule.get("override"),
                           "repo": repo.get("override"), "live": schedule.get("override")}
 
-    print("note      trimmed comparison: 14 persona fields and 19 show fields are not "
-          "readable at tier 1, so they cannot drift here")
-    print_diff(report)
     live_blocklist = blocklist_to_repo(fetch_blocklist(config), json.loads(
         (INSTANCE_DIR / "ids.lock.json").read_text(encoding="utf-8")))
     blocklist_report = compare_blocklist(load_repo_blocklist(), live_blocklist)
-    print_blocklist_diff(blocklist_report)
     skills_report = {"added": [], "removed": [], "changed": [], "unchanged": []}
     if skills_root().is_dir():
         skills_report = compare_skills(load_repo_skills(), load_live_skills(config, 1))
-        print_skill_diff(skills_report)
     count = (len(report["personas"]["added"]) + len(report["personas"]["removed"])
              + len(report["personas"]["changed"]) + len(report["shows"]["added"])
              + len(report["shows"]["removed"]) + len(report["shows"]["changed"])
@@ -2041,6 +2125,20 @@ def diff_trimmed(config, repo):
     count += sum(len(blocklist_report[kind][label]) for kind in ("entries", "rules")
                  for label in ("added", "removed", "changed"))
     count += sum(len(skills_report[label]) for label in ("added", "removed", "changed"))
+
+    note = ("trimmed comparison: 14 persona fields and 19 show fields are not "
+            "readable at tier 1, so they cannot drift here")
+    if as_json:
+        _emit_json("diff", count == 0,
+                   _diff_payload(report, blocklist_report, skills_report, 1, True, count,
+                                 [note]))
+        return EXIT_OK if count == 0 else EXIT_DRIFT
+
+    print("note      %s" % note)
+    print_diff(report)
+    print_blocklist_diff(blocklist_report)
+    if skills_root().is_dir():
+        print_skill_diff(skills_report)
     print("result    %s" % ("in sync on the readable fields only (not a full match)"
                             if count == 0
                             else "%d change(s) in the readable fields" % count))
@@ -3307,6 +3405,7 @@ def validate_instance(root=None, station_moods=None):
 
 
 def cmd_validate(config, args):
+    as_json = bool(getattr(args, "json", False))
     # --dir lets CI validate examples/demo, the committed schema reference.
     # Without it this still validates instance/, exactly as before.
     root = Path(args.dir).expanduser() if getattr(args, "dir", None) else INSTANCE_DIR
@@ -3319,6 +3418,35 @@ def cmd_validate(config, args):
         if tier == 2:
             moods = station_mood_names(config)
     result = validate_instance(root, station_moods=moods)
+
+    counts = dict(result["counts"])
+    counts.update({"errors": len(result["errors"]),
+                   "warnings": len(result["warnings"]),
+                   "unreadable": len(result["unreadable"])})
+    if result["unreadable"]:
+        code = EXIT_CONFIG
+    elif result["errors"]:
+        code = EXIT_ERROR
+    else:
+        code = EXIT_OK
+
+    if as_json:
+        issues = ([{"severity": "unreadable", "message": line}
+                   for line in result["unreadable"]]
+                  + [{"severity": "error", "message": line}
+                     for line in result["errors"]]
+                  + [{"severity": "warning", "message": line}
+                     for line in result["warnings"]])
+        _emit_json("validate", code == EXIT_OK, {
+            "dir": str(root),
+            "errors": result["errors"],
+            "warnings": result["warnings"],
+            "unreadable": result["unreadable"],
+            "issues": issues,
+            "counts": counts,
+        })
+        return code
+
     print("validate  %s" % root)
     if result["unreadable"]:
         for line in result["unreadable"]:
@@ -3331,7 +3459,6 @@ def cmd_validate(config, args):
     for line in result["warnings"]:
         print("warning   %s" % line)
 
-    counts = result["counts"]
     if result["errors"]:
         print("result    %d error(s), %d warning(s) - fix the errors before applying"
               % (len(result["errors"]), len(result["warnings"])))
@@ -5154,6 +5281,8 @@ def build_parser():
     init.set_defaults(func=cmd_init)
 
     status = sub.add_parser("status", help="tier, station, on-air state, repo sync")
+    status.add_argument("--json", action="store_true",
+                        help="print one JSON document instead of the formatted report")
     status.set_defaults(func=cmd_status)
 
     capabilities = sub.add_parser("capabilities",
@@ -5169,6 +5298,8 @@ def build_parser():
     pull.set_defaults(func=cmd_pull)
 
     diff = sub.add_parser("diff", help="read-only drift report")
+    diff.add_argument("--json", action="store_true",
+                      help="print one JSON document instead of the formatted report")
     diff.set_defaults(func=cmd_diff)
 
     mcp_server = sub.add_parser(
@@ -5347,6 +5478,8 @@ def build_parser():
     validate_cmd.add_argument("--dir", default=None,
                               help="validate this station directory instead of instance/ "
                                    "(e.g. examples/demo)")
+    validate_cmd.add_argument("--json", action="store_true",
+                              help="print one JSON document instead of the formatted report")
     validate_cmd.set_defaults(func=cmd_validate)
 
     apply_cmd = sub.add_parser("apply", help="push instance/ to the station (dry run by default)")
