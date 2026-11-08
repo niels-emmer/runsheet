@@ -32,6 +32,11 @@ All notable changes to this project are documented here. The format is based on
   it, and a set-but-missing path fails as a configuration error instead of silently falling back.
   Documented in `.env.example` and the README's "Getting started"; pinned by
   [`tests/test_env_file.py`](tests/test_env_file.py).
+- **`status`, `diff` and `validate` take `--json`.** Each prints one JSON document on stdout instead of
+  the formatted report — an envelope of `command`, `ok` and a command-specific `payload` — so an agent or
+  orchestrator can decide whether a diff is safe and whether validation passed without parsing prose.
+  The default text output and the exit codes are unchanged. The schema is documented in `AGENTS.md` and
+  the README appendix, and [`tests/test_json_output.py`](tests/test_json_output.py) pins all three.
 - **Tier 2 is reachable from a bare ssh host.** `status` at tier 1 now probes the host it is given: one
   read-only ssh round trip lists the running containers, inspects their mounts, and reports the first
   mount that already contains a `settings.json`, printing the exact `SUBWAVE_CONTAINER=` and
