@@ -6,6 +6,9 @@ tests/mock_station.py and read both back. The path is redirected to a temp tree:
 a test must never write to the repository's own audit trail.
 """
 
+import argparse
+import contextlib
+import io
 import json
 import re
 import shutil
@@ -20,7 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # `load_tool()` builds a fresh module on every call, so use the exact module
 # object the shared harness patches; a second copy would leave both the audit
 # path and INSTANCE_DIR redirected in the wrong one.
-from test_apply import ApplyTestCase, runsheet
+import test_prune
+from test_apply import ApplyTestCase, BackupBeforeWriteTests, runsheet
 
 LINK_RE = re.compile(r"^\[(.+)\]\(applied/([^)]+\.md)\)$")
 
@@ -48,25 +52,26 @@ def entry_fields(text):
     return fields
 
 
-class AuditTestCase(ApplyTestCase):
-    def setUp(self):
-        super().setUp()
-        self.docs = self.tmp / "docs"
-        self.docs.mkdir()
-        self.entries = self.docs / "applied"
-        # Start from the real document and its real entry so the test proves
-        # the append matches what actually lives in the repo.
-        source = Path(runsheet.REPO_ROOT) / "docs"
-        shutil.copytree(source / "applied", self.entries)
-        self.doc = self.docs / "applied.md"
-        self.doc.write_text((source / "applied.md").read_text(encoding="utf-8"),
-                            encoding="utf-8")
-        saved = runsheet.APPLIED_DOC
-        runsheet.APPLIED_DOC = self.doc
-        self.addCleanup(setattr, runsheet, "APPLIED_DOC", saved)
-        self.baseline = self.doc.read_text(encoding="utf-8")
-        self.baseline_entries = sorted(path.name for path in self.entries.glob("*.md"))
+def prepare_audit_tree(case, tool):
+    """Point `tool`'s audit write at a temp copy of the real docs/ tree."""
+    case.docs = case.tmp / "docs"
+    case.docs.mkdir()
+    case.entries = case.docs / "applied"
+    # Start from the real document and its real entries so the test proves the
+    # write matches what actually lives in the repo.
+    source = Path(tool.REPO_ROOT) / "docs"
+    shutil.copytree(source / "applied", case.entries)
+    case.doc = case.docs / "applied.md"
+    case.doc.write_text((source / "applied.md").read_text(encoding="utf-8"),
+                        encoding="utf-8")
+    saved = tool.APPLIED_DOC
+    tool.APPLIED_DOC = case.doc
+    case.addCleanup(setattr, tool, "APPLIED_DOC", saved)
+    case.baseline = case.doc.read_text(encoding="utf-8")
+    case.baseline_entries = sorted(path.name for path in case.entries.glob("*.md"))
 
+
+class AuditTreeAssertions:
     def rows(self):
         return data_rows(self.doc.read_text(encoding="utf-8"))
 
@@ -78,6 +83,12 @@ class AuditTestCase(ApplyTestCase):
 
     def read_entry(self, name):
         return (self.entries / name).read_text(encoding="utf-8")
+
+
+class AuditTestCase(AuditTreeAssertions, ApplyTestCase):
+    def setUp(self):
+        super().setUp()
+        prepare_audit_tree(self, runsheet)
 
 
 class SuccessfulApplyTests(AuditTestCase):
@@ -125,6 +136,8 @@ class SuccessfulApplyTests(AuditTestCase):
         self.assertIn("read-back passed", fields["Verified by"])
         self.assertIn("NOT verified", fields["Verified by"],
                       "tier 1 must not claim a full verification")
+        self.assertIn("19 show fields", fields["Verified by"],
+                      "tier 1 reads back only 7 of a show's 26 fields")
         self.assertIn("not checked", fields["Listener check"])
 
         self.assertIn("audit     ", output)
@@ -260,6 +273,67 @@ class MissingAuditDocumentTests(AuditTestCase):
                          "# someone's notes\n\nno table here\n")
         self.assertEqual(self.entry_names(), before,
                          "a skipped index append must not leave an unindexed entry")
+
+
+class BackupRefTests(AuditTreeAssertions, BackupBeforeWriteTests):
+    """The backup path is committed, so it must never name the OS user."""
+
+    def setUp(self):
+        super().setUp()
+        prepare_audit_tree(self, runsheet)
+
+    def test_the_backup_ref_is_home_relative(self):
+        fake_home = self.tmp / "home"
+        fake_home.mkdir()
+        saved = Path.__dict__["home"]
+        Path.home = classmethod(lambda cls: fake_home)
+        self.addCleanup(setattr, Path, "home", saved)
+
+        args = argparse.Namespace(yes=True, force_now=True, no_backup=False,
+                                  prune=False, backup_dir=None)
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = runsheet.cmd_apply(self.config(), args)
+        self.assertEqual(code, 0, buffer.getvalue())
+
+        new = self.new_entries()
+        self.assertEqual(len(new), 1)
+        ref = entry_fields(self.read_entry(new[0]))["Backup ref"]
+        self.assertTrue(ref.startswith("`~/.subwave-backups/"), ref)
+        self.assertNotIn(str(fake_home), ref)
+        self.assertNotIn("/Users/", ref)
+
+
+class PruneEntryTests(AuditTreeAssertions, test_prune.PruneTestCase):
+    """Prune is the one irreversible phase, so the entry must record it."""
+
+    def setUp(self):
+        super().setUp()
+        prepare_audit_tree(self, test_prune.runsheet)
+
+    def test_a_prune_deletion_is_named_in_the_entry(self):
+        self.add_station_show()
+        code, output = self.apply("--backup-dir", str(self.tmp / "backups"))
+        self.assertEqual(code, 0, output)
+
+        new = self.new_entries()
+        self.assertEqual(len(new), 1, "one verified apply, one entry")
+        changed = entry_fields(self.read_entry(new[0]))["What changed"]
+        self.assertIn("prune deleted:", changed)
+        self.assertIn("show Orphan Show", changed)
+
+    def test_a_prune_refusal_still_records_the_writes_that_landed(self):
+        self.add_station_show(in_grid=True)
+        code, output = self.apply("--backup-dir", str(self.tmp / "backups"))
+        self.assertNotEqual(code, 0)
+        self.assertIn("nothing was deleted", output)
+
+        new = self.new_entries()
+        self.assertEqual(len(new), 1,
+                         "the writes landed before the refusal, so they need an entry")
+        changed = entry_fields(self.read_entry(new[0]))["What changed"]
+        self.assertIn("prune refused:", changed)
+        self.assertIn("nothing deleted", changed)
 
 
 if __name__ == "__main__":
