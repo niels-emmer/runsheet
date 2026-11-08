@@ -322,6 +322,16 @@ class PruneEntryTests(AuditTreeAssertions, test_prune.PruneTestCase):
         self.assertIn("prune deleted:", changed)
         self.assertIn("show Orphan Show", changed)
 
+    def test_every_deleted_item_is_named(self):
+        self.add_station_show("s_orphan1", "Orphan One")
+        self.add_station_show("s_orphan2", "Orphan Two")
+        code, output = self.apply("--backup-dir", str(self.tmp / "backups"))
+        self.assertEqual(code, 0, output)
+
+        changed = entry_fields(self.read_entry(self.new_entries()[0]))["What changed"]
+        self.assertIn("Orphan One", changed)
+        self.assertIn("Orphan Two", changed, "every deletion belongs in the record")
+
     def test_a_prune_refusal_still_records_the_writes_that_landed(self):
         self.add_station_show(in_grid=True)
         code, output = self.apply("--backup-dir", str(self.tmp / "backups"))
