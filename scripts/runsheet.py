@@ -5760,8 +5760,8 @@ def main(argv=None):
               % mock.server.url,
               file=sys.stderr if getattr(args, "json", False) else sys.stdout,
               flush=True)
-    config = mock.config if mock else Config()
     try:
+        config = mock.config if mock else Config()
         # Writers take the advisory instance/ lock for the whole command; a
         # read-only command carries no `write_lock` and is never blocked.
         write_lock = getattr(args, "write_lock", None)
