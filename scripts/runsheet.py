@@ -24,6 +24,7 @@ import os
 import re
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -848,6 +849,149 @@ def describe_instance(root=None):
             len(list(persona_dir.glob("*.json"))), len(list(show_dir.glob("*.json"))))
     flat = sorted(path.name for path in root.glob("*.json"))
     return "flat capture (%s)" % ", ".join(flat) if flat else "empty directory"
+
+
+# --------------------------------------------------------------------------
+# write lock: one writer at a time in instance/
+#
+# ids.lock.json is a CONTENT lock (slug -> station id), not a mutex. Two
+# concurrent `apply` runs in one checkout - two agent sessions, or an
+# orchestrator spawning two workers - each read the same ids and send
+# conflicting payloads, and race on the lockfile write. This is the separate
+# advisory mutex: a file created with O_EXCL that names its holder. Read-only
+# commands (status, diff, validate) never take it.
+# --------------------------------------------------------------------------
+
+WRITE_LOCK = ".runsheet.lock"
+# An empty or truncated lock can only come from a crash between create and
+# write. Wait this long before calling it stale, so a live process mid-write is
+# never robbed.
+STALE_UNREADABLE_SECONDS = 5.0
+
+
+def _lock_payload(command):
+    return json.dumps({
+        "pid": os.getpid(),
+        "command": command,
+        "started": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "host": socket.gethostname(),
+    }) + "\n"
+
+
+def _read_write_lock(path):
+    try:
+        holder = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(holder, dict) or not isinstance(holder.get("pid"), int):
+        return None
+    return holder
+
+
+def _pid_is_alive(pid):
+    """True when the process exists (POSIX). EPERM means another user's process."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        # Unknown: never steal a lock we cannot prove is dead.
+        return True
+    return True
+
+
+def _describe_lock(holder, path):
+    if holder is None:
+        return "unreadable lock file at %s" % path
+    who = "pid %d, command %r" % (holder["pid"], holder.get("command") or "unknown")
+    if holder.get("started"):
+        who += ", started %s" % holder["started"]
+    if holder.get("host"):
+        who += ", on %s" % holder["host"]
+    return who
+
+
+def _lock_is_stale(holder, path):
+    if holder is None:
+        try:
+            return (time.time() - Path(path).stat().st_mtime) > STALE_UNREADABLE_SECONDS
+        except OSError:
+            return True
+    # A pid on another host cannot be checked here; leave that lock alone.
+    if holder.get("host") and holder["host"] != socket.gethostname():
+        return False
+    return not _pid_is_alive(holder["pid"])
+
+
+class InstanceWriteLock:
+    """Advisory mutex over instance/. Use as a context manager."""
+
+    def __init__(self, root, command):
+        self.root = Path(root)
+        self.command = command
+        self.path = self.root / WRITE_LOCK
+        self.acquired = False
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self.release()
+        return False
+
+    def acquire(self):
+        # No instance/ means nothing to protect: the command's own guard ("no
+        # instance/ to apply") is the error the operator needs.
+        if not self.root.is_dir():
+            return
+        while True:
+            try:
+                fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            except FileExistsError:
+                holder = _read_write_lock(self.path)
+                if not _lock_is_stale(holder, self.path):
+                    raise ToolError(
+                        "%s is locked by another runsheet command (%s). Nothing was written. "
+                        "Wait for it to finish; if that process is gone, remove %s and retry."
+                        % (self.root, _describe_lock(holder, self.path), self.path))
+                print("warning   removing stale write lock at %s (%s)"
+                      % (self.path, _describe_lock(holder, self.path)), flush=True)
+                try:
+                    self.path.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    raise ToolError("cannot remove stale write lock %s (%s)" % (self.path, exc))
+                continue
+            except OSError as exc:
+                raise ToolError("cannot create write lock %s (%s)" % (self.path, exc))
+            try:
+                os.write(fd, _lock_payload(self.command).encode("utf-8"))
+            except BaseException:
+                self.path.unlink(missing_ok=True)
+                raise
+            finally:
+                os.close(fd)
+            self.acquired = True
+            return
+
+    def release(self):
+        if not self.acquired:
+            return
+        self.acquired = False
+        holder = _read_write_lock(self.path)
+        # If somebody replaced our file, it is theirs now: do not delete it.
+        if holder is not None and holder.get("pid") != os.getpid():
+            return
+        try:
+            self.path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 # --------------------------------------------------------------------------
@@ -4824,16 +4968,16 @@ def build_parser():
     bl_block.add_argument("--name")
     bl_block.add_argument("--artist")
     bl_block.add_argument("--album")
-    bl_block.set_defaults(func=cmd_blocklist)
+    bl_block.set_defaults(func=cmd_blocklist, write_lock="blocklist")
 
     bl_unblock = bl_sub.add_parser("unblock", help="remove a block locally")
     bl_unblock.add_argument("--type", required=True, choices=("artist", "album", "track"))
     bl_unblock.add_argument("--id", required=True)
-    bl_unblock.set_defaults(func=cmd_blocklist)
+    bl_unblock.set_defaults(func=cmd_blocklist, write_lock="blocklist")
 
     bl_rm = bl_sub.add_parser("rm", help="remove a rule locally")
     bl_rm.add_argument("slug")
-    bl_rm.set_defaults(func=cmd_blocklist)
+    bl_rm.set_defaults(func=cmd_blocklist, write_lock="blocklist")
 
     bl_rule = bl_sub.add_parser("rule", help="add or edit a rule")
     rule_sub = bl_rule.add_subparsers(dest="rule_command", required=True)
@@ -4852,7 +4996,7 @@ def build_parser():
         rule_parser.add_argument("--season-to", help="MM-DD; from > to wraps the year end")
         rule_parser.add_argument("--show", action="append", default=None,
                                  help="show slug; omit for station-wide")
-        rule_parser.set_defaults(func=cmd_blocklist_rule)
+        rule_parser.set_defaults(func=cmd_blocklist_rule, write_lock="blocklist")
 
     character = sub.add_parser("character", help="author the character layer locally (no network)")
     char_sub = character.add_subparsers(dest="character_command", required=True)
@@ -4866,13 +5010,13 @@ def build_parser():
     char_persona = char_sub.add_parser("new-persona", help="scaffold a persona with all 18 fields")
     char_persona.add_argument("slug")
     char_persona.add_argument("--name")
-    char_persona.set_defaults(func=cmd_character)
+    char_persona.set_defaults(func=cmd_character, write_lock="character")
 
     char_show = char_sub.add_parser("new-show", help="scaffold a show with all 26 fields")
     char_show.add_argument("slug")
     char_show.add_argument("--name")
     char_show.add_argument("--persona", help="persona slug to host it")
-    char_show.set_defaults(func=cmd_character)
+    char_show.set_defaults(func=cmd_character, write_lock="character")
 
     char_grid = char_sub.add_parser("add-to-grid", help="fill grid cells with a show")
     char_grid.add_argument("slug", nargs="?")
@@ -4883,7 +5027,7 @@ def build_parser():
                            help="take over cells that hold another show")
     char_grid.add_argument("--clear", action="store_true",
                            help="empty those hours instead: the station runs autonomously then")
-    char_grid.set_defaults(func=cmd_character)
+    char_grid.set_defaults(func=cmd_character, write_lock="character")
 
     char_edit_persona = char_sub.add_parser(
         "edit-persona", help="change named fields of a persona; every other field is untouched")
@@ -4893,7 +5037,7 @@ def build_parser():
     char_edit_persona.add_argument("--force-value", dest="force_value", action="store_true",
                                    help="allow a value outside the known vocabulary (warns loudly; "
                                         "for a station that knows more than this tool)")
-    char_edit_persona.set_defaults(func=cmd_character)
+    char_edit_persona.set_defaults(func=cmd_character, write_lock="character")
 
     char_edit_show = char_sub.add_parser(
         "edit-show", help="change named fields of a show; every other field is untouched")
@@ -4903,7 +5047,7 @@ def build_parser():
     char_edit_show.add_argument("--force-value", dest="force_value", action="store_true",
                                 help="allow a value outside the known vocabulary (warns loudly; "
                                      "for a station that knows more than this tool)")
-    char_edit_show.set_defaults(func=cmd_character)
+    char_edit_show.set_defaults(func=cmd_character, write_lock="character")
 
     validate_cmd = sub.add_parser("validate", help="check instance/ before applying")
     validate_cmd.add_argument("--dir", default=None,
@@ -4921,14 +5065,14 @@ def build_parser():
                            help="also delete entities that exist on the station but not in the repo")
     apply_cmd.add_argument("--force-prune", action="store_true",
                            help="delete even when a grid cell or a hosted show depends on it")
-    apply_cmd.set_defaults(func=cmd_apply)
+    apply_cmd.set_defaults(func=cmd_apply, write_lock="apply")
 
     restore = sub.add_parser("restore", help="put a backup back (dry run by default)")
     restore.add_argument("directory", help="a directory written by backup")
     restore.add_argument("--yes", action="store_true", help="perform the restore")
     restore.add_argument("--force-now", action="store_true",
                          help="restore even while the station is on air")
-    restore.set_defaults(func=cmd_restore)
+    restore.set_defaults(func=cmd_restore, write_lock="restore")
 
     backup = sub.add_parser("backup", help="copy config + assets outside the repo")
     backup.add_argument("--dir", help="base directory (default ~/.subwave-backups)")
@@ -4956,8 +5100,14 @@ def main(argv=None):
             return EXIT_CONFIG
         print("mock      %s (in-process tests/mock_station.py; no network, no host)"
               % mock.server.url, flush=True)
+    config = mock.config if mock else Config()
     try:
-        config = mock.config if mock else Config()
+        # Writers take the advisory instance/ lock for the whole command; a
+        # read-only command carries no `write_lock` and is never blocked.
+        write_lock = getattr(args, "write_lock", None)
+        if write_lock:
+            with InstanceWriteLock(INSTANCE_DIR, write_lock):
+                return args.func(config, args)
         return args.func(config, args)
     except ConfigError as exc:
         print("runsheet: %s" % exc, file=sys.stderr)
