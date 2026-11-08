@@ -235,6 +235,9 @@ skills/<name>/SKILL.md    agent procedures — the only copy of each
 .agents/skills/<name>     folder symlink -> ../../skills/<name> (Codex; OpenCode reads both)
 examples/demo/            committed fictional station, same shape as instance/
 tests/                    offline suite; mock_station.py serves a real-shaped controller
+docs/INSTALL.md           setup and the two tiers
+docs/USAGE.md             what each kind of request does, in full
+docs/REFERENCE.md         commands, flags and the --json shapes
 docs/ARCHITECTURE.md      this file
 docs/PLAN.md              what is left to do
 docs/decision-log.md      why each choice was made, and what was rejected

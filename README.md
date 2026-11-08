@@ -5,17 +5,36 @@
 
 ![An engineer and a robot DJ sharing a mixing desk in a radio studio](docs/assets/station.png)
 
-You run a SUB/WAVE station. This lets you look after it by talking to your agent instead of clicking
-through the admin console. Your station's settings live as files in a git repo, so you can see what
-changed, undo it, and keep a history of how the station got to sound the way it does.
+runsheet keeps a live SUB/WAVE station's configuration as plain files in a checkout you control, so you
+can look after it by talking to your agent instead of clicking through the admin console. Diff it, commit
+it, revert it — the station keeps running exactly as before; this changes how its config gets edited,
+checked and put back.
 
-## tldr;
+## Install it with your agent
 
-SUB/WAVE gives you a station. This gives you a way to change it that you can check first and undo
-afterwards. Install it if any of these matter:
+Paste this into Claude Code, Codex, OpenCode, or any agent that reads `AGENTS.md`:
 
-- **Your config is a git repo, not a web form.** Every host, show, hour and ban is a file you can diff,
-  blame, branch and revert — so "what changed last Tuesday, and who changed it" has an answer.
+> Install runsheet for me from https://github.com/niels-emmer/runsheet. Clone it, read `AGENTS.md`, then
+> run `init` against my station. Ask me for the ssh host and the admin username and password.
+
+That is the intended path, and the repo is built to be discoverable that way: `AGENTS.md` is the hub, and
+the five procedures in `skills/` are committed as relative symlinks under `.claude/skills/` and
+`.agents/skills/`, so all three named agents find them with no setup. There is nothing to install — the
+tool is one Python file using only the standard library.
+
+### Or three commands yourself
+
+1. `git clone https://github.com/niels-emmer/runsheet.git && cd runsheet`
+2. `python3 scripts/runsheet.py init --host you@your-server --base-url http://127.0.0.1:7700 --admin-user admin --admin-pass 'your-admin-password'`
+3. Open your agent in that directory and ask **"what's on air?"**
+
+runsheet does not run Docker: your SUB/WAVE station does, and giving runsheet host access only means it
+reads the station's state over ssh. No station yet? `character init --from demo` writes a fictional one.
+Full setup — both tiers, one credentials file across many checkouts, the manual `.env` route — lives in
+**[docs/INSTALL.md](docs/INSTALL.md)**.
+
+## Why use this instead of the console
+
 - **Nothing goes live unexamined.** `apply` is a dry run by default, prints every change, waits for your
   `--yes`, then reads the station back and fails loudly if a field did not actually land.
 - **An agent can do the authoring.** Adding a host, writing their soul, creating a show and filling grid
@@ -24,110 +43,26 @@ afterwards. Install it if any of these matter:
   blocklist; this captures them and writes a note saying where each file goes back.
 - **Live control stays separate and deliberate.** Reads, edits and on-air actions are distinct doors, so a
   routine sync can never accidentally skip a track or say something on air.
+- **History answers "what changed last Tuesday".** Hosts, shows and bans are plain files, so keep them in
+  your own version control and diff, blame or revert — nothing here publishes your station's details.
 
 ## What you can ask for
 
-### Finding out what is going on
+| Say something like | You get |
+| --- | --- |
+| "What's on air right now?" | the track, the show, the host, and whether the stream is healthy |
+| "What changed since last week?" | drift against the live station, by host, show and hour — it changes nothing |
+| "Why does `<host>` talk so much?" | their dials and character read, the smallest fix proposed, no guessing |
+| "Make `<host>` warmer" | that one setting changed, before and after, nothing sent until you agree |
+| "Add a host" / "make me a new show" | a persona or programme scaffolded, then the grid cells it fills |
+| "Stop playing `<artist>`" | a station-wide ban, or one that applies only while a show is on air |
+| "Back up the station" / "push my files to the station" | a restorable copy, or a diffed, confirmed apply |
+| "Say something on air" / "skip this track" | live control, with an explicit `--yes` every time |
 
-**"What's on air right now?"**
-The track, the show, the host, and whether the station is actually streaming.
+The long version — including the one rule that surprises people about seasonal bans — is in
+**[docs/USAGE.md](docs/USAGE.md)**.
 
-**"What changed since last week?"**
-Compares your files against the live station and lists what differs, by host, by show, by hour of the
-week. Asking changes nothing.
-
-### Fixing how a host sounds
-
-**"Why does <host> talk so much?"**
-Reads that host's dials, their written character and the shows they present, then proposes the smallest
-change that would fix it. It does not guess: if the answer is "that show is set to talk a lot", it says so
-and shows you the setting.
-
-**"Make <host> warmer"** or **"make this show less chatty"**
-Changes that one setting, checks the result, and shows you before and after. Nothing goes live until you
-say so.
-
-### Adding people and programmes
-
-**"Add a host"**
-Scaffolds a new host — but it asks you to describe the character first, because a host's soul *is* the
-prompt the DJ writes from. A blank soul produces a blank presenter.
-
-**"Make me a new show"**, then **"put it on Sunday mornings"**
-Creates the show and fills the hours you name in the weekly grid, showing you which cells it changes and
-which it would take from another show.
-
-### Keeping things out
-
-**"Stop playing <artist>"**
-Adds a ban. Bans apply to the whole station, or only while a particular show is on air.
-
-**"Block Christmas music until December"**
-Worth reading twice: a seasonal rule's window is **when the rule is paused**, not when it applies. A
-December window means the ban is off during December and on for the other eleven months. If you want it the
-other way round, say so.
-
-### Protecting the station
-
-**"Back up the station"**
-Copies the settings, the shows, the schedule, the station's skills and its media manifests, and writes a
-note saying where each file goes back. Deliberately more than the console's export, which leaves out the
-schedule — and so loses every show and the whole grid. It needs host access: without it the tool refuses
-rather than hand you a backup that could not restore the programming.
-
-**"Put the station back to what's in git"**
-Sends your files to the station. It shows you every change first and sends nothing until you confirm.
-
-**"Undo the last change"**
-Puts a backup back, or applies an earlier commit — depending on whether you want the station as it was ten
-minutes ago or last week.
-
-### Live, right now
-
-**"Say something on air"**, **"skip this track"**, **"play a jingle"**
-These change what is happening this second. They are the only things here that do, they need your explicit
-go-ahead each time, and a skip also needs to know which track you meant — or your permission to skip
-whatever is playing.
-
-## Without a checkout: the station's own MCP server
-
-If you only want to talk to the station — what is on air, say something, skip a track, queue a request —
-you do not need this repository at all. The station serves an MCP endpoint at `/api/mcp` (Streamable HTTP,
-21 tools), so any MCP-capable agent can be pointed at it as a server. Reads need no credentials; the
-control tools take the station's admin username and password.
-
-What that door does not have is every safety property below it in this README: no diff, no dry run, no
-backup before a change, no read-back afterwards, no `--yes`. Each call happens immediately and cannot be
-undone. And it cannot read or write the station's configuration at all — no persona, show, schedule or
-settings tool exists there. That is what the checkout, and `apply`, are for.
-
-### The toolkit's own MCP server: read-only, three tools
-
-That was the *station's* server. This repository also has a second, much smaller one of its own, for an
-agent that would rather call a tool than run `runsheet.py` and parse text:
-
-```sh
-python3 scripts/runsheet.py mcp-server     # MCP over stdio
-```
-
-It exposes exactly three tools, each a thin wrapper around the command of the same name:
-`runsheet_status`, `runsheet_diff` and `runsheet_validate`. Every tool is annotated `readOnlyHint: true`,
-and each result carries the command's own output verbatim plus its exit code.
-
-There is deliberately no fourth tool. `apply`, `character`, `blocklist`, `skills`, `backup`, `restore`
-and `onair` stay CLI-only: a configuration change needs a diff, a dry run and an explicit confirmation,
-and a tool call has none of the three. Putting a writer behind `tools/call` would delete the review step
-that makes this toolkit safe — the same reasoning as the station's own control-only boundary.
-
-## What it cannot do yet
-
-- **Avatars and station imaging.** Jingles, sound effects and beds are backed up but not authored here. Use
-  the station's admin console for those.
-- **Library work.** Tagging, building playlists, searching your collection — that is Navidrome's job.
-- **Anything that bypasses the station's review step for a skill's custom script** — the station refuses to
-  run one until a person has read and trusted it, and nothing here shortcuts that.
-
-## What a session looks like
+## A session looks like this
 
 ```
 You:    add a host
@@ -142,85 +77,30 @@ You:    go ahead
 Agent:  Applied, then read back from the station: one host, one show, three grid cells confirmed.
 ```
 
-## How it works
+## Without a checkout
 
-Your station is described by the files in `instance/`. That directory is yours alone — it is excluded from
-git, so nothing about your station is ever published. Your agent edits those files, shows you the diff, and
-sends them only when you say so.
+The station serves an MCP endpoint at `/api/mcp` (Streamable HTTP, 21 tools), so an MCP-capable agent can be
+pointed straight at it: reads need no credentials, and control tools take the admin username and password.
+It has none of the safety properties above — no diff, no dry run, no backup, no read-back, no `--yes` — and
+it cannot read or write configuration at all. That is what the checkout, and `apply`, are for.
 
-```
-   instance/  ──edit──►  diff  ──you approve──►  apply  ──►  the station
-   your files             what would change       sends nothing until you say yes
-```
-
-A few things work the other way round, because waiting for a file edit makes no sense when the DJ is
-mid-sentence:
-
-```
-   "say something on air"  ──►  the station      (no file, no review, gone in a minute)
-```
-
-That second path is the only one that skips the review, and it never touches your files or your history.
-
-## Getting started
+This repository also has a much smaller MCP server of its own, over stdio:
 
 ```sh
-git clone https://github.com/niels-emmer/runsheet.git
-cd runsheet
-python3 scripts/runsheet.py init --host you@your-server \
-    --base-url http://127.0.0.1:7700 --admin-user admin --admin-pass 'your-admin-password'
+python3 scripts/runsheet.py mcp-server     # status, diff, validate; all readOnlyHint
 ```
 
-`init` does the setup in one step. Given an ssh address it runs the same read-only discovery
-`status` does, finds the controller container and its data directory, and writes `SUBWAVE_HOST`,
-`SUBWAVE_CONTAINER` and `SUBWAVE_STATE_DIR` into `.env`; the HTTP flags write the station's address
-and admin credentials in the same pass. Host access is HTTP **plus** ssh, so keep `--base-url` and
-the admin pair even when you pass `--host`. `--station-password` is there too if your listeners need
-one. There is no `.env` yet, so `init` starts from `.env.example` for you.
+Three tools, each a thin wrapper around the command of the same name. There is deliberately no fourth: a
+configuration change needs a diff, a dry run and an explicit confirmation, and a `tools/call` has none of
+the three.
 
-Without ssh, pass just the HTTP settings for the lighter tier:
+## What it cannot do yet
 
-```sh
-python3 scripts/runsheet.py init --base-url http://127.0.0.1:7700 \
-    --admin-user admin --admin-pass 'your-admin-password'
-```
-
-Either form writes `.env` in one go. If `.env` already holds a station, `init` prints what it would
-write and refuses until you add `--force`, and it masks passwords in what it prints. Anything still
-missing afterwards is named in a `next` line, including a missing `SUBWAVE_BASE_URL` or admin pair.
-The manual route still works if you prefer it: `cp .env.example .env`, fill it in, and run `status` —
-it still prints the two host-access lines to paste back.
-
-Then open your agent in that directory — Claude Code, Codex, OpenCode, or anything else that reads
-`AGENTS.md` — and ask for the station's status. Nothing to install: the tool is one Python file with no
-dependencies.
-
-Working from many checkouts against one station? Keep the credentials in one file outside all of them,
-e.g. `~/.config/runsheet/station.env` (same `KEY=VALUE` lines as `.env.example`), and export
-`RUNSHEET_ENV_FILE=~/.config/runsheet/station.env`. Every ephemeral worktree then loads its `SUBWAVE_*`
-values from that file and needs no `.env` of its own — and `init` writes to that file when the variable
-is set, so one command configures the shared file directly. Precedence: variables already exported in the
-environment win, then the file named by `RUNSHEET_ENV_FILE`, then `./.env` — and a named file replaces
-`./.env` rather than merging with it, so two stations' credentials cannot be mixed. A path that is set
-but missing is a configuration error, not a silent fallback.
-
-No station yet? `character init --from demo` writes a small fictional station into `instance/`, so you can
-walk the whole flow — edit, validate, dry run — without one.
-
-### One choice decides how much you get
-
-**With only the web address** you can author a station from scratch and push it — with `apply --yes
---no-backup`, because a backup is the one thing that tier cannot take. You cannot take over the one you
-already have: the API trims host and show details, and it cannot hand back your shows or the weekly grid at
-all. A web-address-only copy of a live station is marked lossy, and `apply` refuses it rather than push back
-seven fields per show and lose the other nineteen.
-
-**Add ssh access** and you get the whole station: full reads, a capture you can edit, and a backup that can
-restore the programming.
-
-You do not have to work out the rest yourself. `init --host` discovers the container and the data
-directory and writes both to `.env`; if you prefer to paste them yourself, set `SUBWAVE_HOST` and run
-`status`, which still prints the two lines to add.
+- **Avatars and station imaging.** Jingles, sound effects and beds are backed up but not authored here. Use
+  the station's admin console for those.
+- **Library work.** Tagging, building playlists, searching your collection — that is Navidrome's job.
+- **Anything that bypasses the station's review step for a skill's custom script** — the station refuses to
+  run one until a person has read and trusted it, and nothing here shortcuts that.
 
 ## Safety, short
 
@@ -229,76 +109,15 @@ backup to take, and `apply` refuses unless you pass `--no-backup`). Every write 
 a change that did not land is reported rather than assumed. Deletions refuse when something still depends
 on what you are deleting. The full list of guards, and what each protects against, is in `AGENTS.md`.
 
-## Appendix: the technical reference
-
-Two ways to reach a station. The second is worth having.
-
-|  | Web address only | Plus ssh access |
-| --- | --- | --- |
-| Needs | address + admin password | also ssh and `docker exec` |
-| Create / update | author from scratch only, with `--no-backup` | yes |
-| Read hosts and shows | trimmed | complete |
-| Read the weekly grid | yes | yes |
-| Backup | **refused** | complete |
-
-| Command | What it does | Example |
-| --- | --- | --- |
-| `init` | write `.env` in one step: discover host access, or record HTTP-only credentials | `init --host you@server` |
-| `status` | tier, station, what is on air, drift vs your files (tier 2 only), and the lines that reach host access | `status` |
-| `capabilities` | what the current tier can do, and why a verb cannot; `--json` for an orchestrator | `capabilities --json` |
-| `pull` | copy the station into `instance/` | `pull --force` |
-| `diff` | what differs between your files and the station | `diff` |
-| `validate` | check your files before applying | `validate --dir examples/demo` |
-| `mcp-server` | the same three reads as MCP tools, for an MCP client | `mcp-server` |
-| `apply` | send your files to the station; dry run unless `--yes` | `apply --yes` |
-| `backup` | config, assets and schedule, outside the repo | `backup --with-library` |
-| `restore` | put a backup back | `restore <dir> --yes` |
-| `character` | hosts, shows and the weekly grid | `character new-show <slug> --persona <persona>` |
-| `skills` | the station's own DJ segments | `skills new late-shift` |
-| `blocklist` | bans and rules | `blocklist block --type artist --id <id>` |
-| `onair` | live control | `onair say "Back after this." --yes` |
-| `--mock` | run any station command against the in-process mock station: no network, no ssh, no live config | `apply --yes --mock` |
-
-Flags live here rather than in the body: `init` takes `--host` for host access, plus `--base-url`,
-`--admin-user`, `--admin-pass` and `--station-password` for the station's HTTP side (the HTTP flags
-work with or without `--host`), and `--force` to update a populated `.env`. `apply` also takes
-`--force-now` (write while on air), `--no-backup`,
-`--backup-dir`, and `--prune` / `--force-prune` for things on the station but not in your files. `pull` takes
-`--allow-lossy` for a partial copy. `--mock` works with every command that talks to a station and swaps the
-station for the repository's own mock (`tests/mock_station.py`), started in-process on loopback as a tier-2
-station; it ignores `SUBWAVE_*` and `.env` entirely. Each run starts a fresh station, so nothing persists
-between invocations. `backup --dir` writes the copy somewhere other than `~/.subwave-backups`,
-and `restore --force-now` restores while the station is on air. `character init` takes `--from demo|blank` — a
-placeholder station instead of the demo — and `--force` to replace an existing `instance/`. `skills edit`
-changes `--label`, `--cooldown` and `--brief`, and `blocklist rule add|edit` authors a rule by slug.
-
-The `onair` reads are free: `onair tools`, `onair now`, `onair state`, and `onair list skills|sfx|jingles`.
-Every `onair` verb that changes air needs `--yes`: `say` (with `--raw` to say it verbatim, `--over-track` to
-talk over the music, and `--sfx` to play an effect first), `segment`, `skip`, `request`, `queue` (with `--pick N`
-to take a result other than the top one), `sfx` and `jingle`. `skip` additionally needs `--expect-id` or
-`--any-track`.
-
-`status`, `diff` and `validate` accept `--json`, which prints one JSON document on stdout instead of the
-formatted report — the same information, for a caller that must not parse prose. The shape is
-`{"command": ..., "ok": ..., "payload": {...}}`, and `payload` holds the command's own fields: `status`
-reports tier, endpoint, station, on-air state, config counts, repo-vs-live sync, and the tier-2 discovery
-result (`tier2.state` is `not-configured`, `probe-failed`, `none-found` or `found`, with candidates and
-any host note); `diff` reports the change count plus personas, shows, changed grid days, settings keys,
-character, override, blocklist and skills; `validate` reports the directory, errors, warnings, unreadable
-input, a combined `issues` list and counts.
-
-`ok` mirrors a zero exit code: for `status` the station API answered, for `diff` no drift was found, and
-for `validate` there are no errors and nothing unreadable. A tier-1 `diff` can be `ok: true` on the
-readable fields only, so check `payload.trimmed` before treating it as a full match. Exit codes do not
-change, so `diff` still exits 1 on drift and `validate` 1 on errors. A failed command still prints a
-document — `ok: false`, `payload: null`, and an `error` message — alongside the stderr line, so stdout is
-always parseable when `--json` was asked for.
-
-Two directories are called `skills/`, and they are different things:
-
-- `skills/` at the top of the repo — the procedures your agent follows when it works here.
-- `instance/skills/` — your station's own DJ segments, the ones that go to air.
-
 ## Where to read more
 
-`AGENTS.md` for agents and the full guard list · `docs/ARCHITECTURE.md` for how it is built · `docs/PLAN.md` for what is left · `docs/decision-log.md` for why · `docs/applied.md` for what has aired.
+| Doc | Covers |
+| --- | --- |
+| [AGENTS.md](AGENTS.md) | the operating rules every agent reads, and the full guard list |
+| [docs/INSTALL.md](docs/INSTALL.md) | both tiers, credentials, the demo station, `--mock` |
+| [docs/USAGE.md](docs/USAGE.md) | every request in the table above, in full |
+| [docs/REFERENCE.md](docs/REFERENCE.md) | all commands, flags and the `--json` shapes |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | how it is built and why |
+| [docs/PLAN.md](docs/PLAN.md) | what is left to do |
+| [docs/decision-log.md](docs/decision-log.md) | why each choice was made, and what was rejected |
+| [docs/applied.md](docs/applied.md) | what has aired |
