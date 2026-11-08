@@ -890,10 +890,12 @@ def describe_instance(root=None):
 # --------------------------------------------------------------------------
 
 WRITE_LOCK = ".runsheet.lock"
-# An empty or truncated lock can only come from a crash between create and
-# write. Wait this long before calling it stale, so a live process mid-write is
-# never robbed.
-STALE_UNREADABLE_SECONDS = 5.0
+# A second O_EXCL file serialises the contenders that break a stale lock. Two of
+# them must not both unlink/recreate the main lock: the slow one would delete the
+# fast one's fresh lock and both would proceed. A breaker is held for two stats
+# and an unlink, so one left behind means its owner crashed there; it is reported
+# rather than guessed at.
+WRITE_LOCK_BREAK = ".runsheet.lock.break"
 
 
 def _lock_payload(command):
@@ -905,6 +907,24 @@ def _lock_payload(command):
     }) + "\n"
 
 
+def _create_exclusive(path, payload):
+    """Create `path` with O_EXCL and its content. False when it already exists."""
+    try:
+        fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        return False
+    except OSError as exc:
+        raise ToolError("cannot create lock file %s (%s)" % (path, exc))
+    try:
+        os.write(fd, payload.encode("utf-8"))
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    finally:
+        os.close(fd)
+    return True
+
+
 def _read_write_lock(path):
     try:
         holder = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -913,6 +933,13 @@ def _read_write_lock(path):
     if not isinstance(holder, dict) or not isinstance(holder.get("pid"), int):
         return None
     return holder
+
+
+def _same_holder(left, right):
+    """The same lock record, not merely the same pid (pid reuse is real)."""
+    if left is None or right is None:
+        return False
+    return all(left.get(key) == right.get(key) for key in ("pid", "started", "host"))
 
 
 def _pid_is_alive(pid):
@@ -942,12 +969,13 @@ def _describe_lock(holder, path):
     return who
 
 
-def _lock_is_stale(holder, path):
+def _lock_is_stale(holder):
+    # An unreadable lock (empty, truncated, not JSON, a restrictive umask) is
+    # REPORTED, never stolen: the code cannot prove its owner is gone, and the
+    # documented contract is that only a dead pid is recovered. The refusal names
+    # the file so the operator can remove it by hand.
     if holder is None:
-        try:
-            return (time.time() - Path(path).stat().st_mtime) > STALE_UNREADABLE_SECONDS
-        except OSError:
-            return True
+        return False
     # A pid on another host cannot be checked here; leave that lock alone.
     if holder.get("host") and holder["host"] != socket.gethostname():
         return False
@@ -961,6 +989,7 @@ class InstanceWriteLock:
         self.root = Path(root)
         self.command = command
         self.path = self.root / WRITE_LOCK
+        self.break_path = self.root / WRITE_LOCK_BREAK
         self.acquired = False
 
     def __enter__(self):
@@ -977,35 +1006,48 @@ class InstanceWriteLock:
         if not self.root.is_dir():
             return
         while True:
-            try:
-                fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-            except FileExistsError:
-                holder = _read_write_lock(self.path)
-                if not _lock_is_stale(holder, self.path):
-                    raise ToolError(
-                        "%s is locked by another runsheet command (%s). Nothing was written. "
-                        "Wait for it to finish; if that process is gone, remove %s and retry."
-                        % (self.root, _describe_lock(holder, self.path), self.path))
+            if _create_exclusive(self.path, _lock_payload(self.command)):
+                self.acquired = True
+                return
+            holder = _read_write_lock(self.path)
+            if not _lock_is_stale(holder):
+                raise ToolError(
+                    "%s is locked by another runsheet command (%s). Nothing was written. "
+                    "Wait for it to finish; if that process is gone, remove %s and retry."
+                    % (self.root, _describe_lock(holder, self.path), self.path))
+            self._break_stale_lock(holder)
+
+    def _break_stale_lock(self, observed):
+        """Remove `observed`'s lock, serialised by the breaker file.
+
+        `observed` is a stale snapshot: by the time the breaker is held, another
+        contender may already have replaced the lock. Re-read it and unlink only
+        if it still names the same dead holder.
+        """
+        if not _create_exclusive(self.break_path, _lock_payload(self.command + " breaker")):
+            breaker = _read_write_lock(self.break_path)
+            raise ToolError(
+                "%s is locked and its stale-lock breaker %s is already present (%s). Nothing "
+                "was written. Wait for it to finish; if no runsheet command is running, remove "
+                "%s and %s and retry."
+                % (self.root, self.break_path, _describe_lock(breaker, self.break_path),
+                   self.path, self.break_path))
+        try:
+            current = _read_write_lock(self.path)
+            if _same_holder(current, observed) and _lock_is_stale(current):
                 print("warning   removing stale write lock at %s (%s)"
-                      % (self.path, _describe_lock(holder, self.path)), flush=True)
+                      % (self.path, _describe_lock(current, self.path)), flush=True)
                 try:
                     self.path.unlink()
                 except FileNotFoundError:
                     pass
                 except OSError as exc:
                     raise ToolError("cannot remove stale write lock %s (%s)" % (self.path, exc))
-                continue
-            except OSError as exc:
-                raise ToolError("cannot create write lock %s (%s)" % (self.path, exc))
+        finally:
             try:
-                os.write(fd, _lock_payload(self.command).encode("utf-8"))
-            except BaseException:
-                self.path.unlink(missing_ok=True)
-                raise
-            finally:
-                os.close(fd)
-            self.acquired = True
-            return
+                self.break_path.unlink()
+            except FileNotFoundError:
+                pass
 
     def release(self):
         if not self.acquired:
@@ -5554,7 +5596,7 @@ def build_parser():
     skills_list.set_defaults(func=cmd_skills)
     skills_new = skills_sub.add_parser("new", help="scaffold a skill")
     skills_new.add_argument("slug")
-    skills_new.set_defaults(func=cmd_skills)
+    skills_new.set_defaults(func=cmd_skills, write_lock="skills")
     skills_show = skills_sub.add_parser("show", help="print a skill's SKILL.md")
     skills_show.add_argument("slug")
     skills_show.set_defaults(func=cmd_skills)
@@ -5563,10 +5605,10 @@ def build_parser():
     skills_edit.add_argument("--label")
     skills_edit.add_argument("--cooldown")
     skills_edit.add_argument("--brief")
-    skills_edit.set_defaults(func=cmd_skills)
+    skills_edit.set_defaults(func=cmd_skills, write_lock="skills")
     skills_rm = skills_sub.add_parser("rm", help="remove a skill locally")
     skills_rm.add_argument("slug")
-    skills_rm.set_defaults(func=cmd_skills)
+    skills_rm.set_defaults(func=cmd_skills, write_lock="skills")
 
     blocklist = sub.add_parser("blocklist", help="author the blocklist locally (no network)")
     bl_sub = blocklist.add_subparsers(dest="blocklist_command", required=True)
