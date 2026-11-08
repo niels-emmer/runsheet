@@ -5160,8 +5160,8 @@ def main(argv=None):
             return EXIT_CONFIG
         print("mock      %s (in-process tests/mock_station.py; no network, no host)"
               % mock.server.url, flush=True)
-    config = mock.config if mock else Config()
     try:
+        config = mock.config if mock else Config()
         # Writers take the advisory instance/ lock for the whole command; a
         # read-only command carries no `write_lock` and is never blocked.
         write_lock = getattr(args, "write_lock", None)
