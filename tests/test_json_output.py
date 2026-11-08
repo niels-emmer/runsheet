@@ -95,6 +95,20 @@ class StatusJsonTests(unittest.TestCase):
         self.assertIn("503", document["payload"]["apiError"])
         self.assertIsNone(document["payload"]["onAir"])
 
+    def test_a_config_error_still_prints_a_document(self):
+        saved_dotenv = runsheet.load_dotenv
+        runsheet.load_dotenv = lambda path: {}
+        try:
+            os.environ.pop("SUBWAVE_BASE_URL", None)
+            code, document, _ = run_json("status", "--json")
+        finally:
+            runsheet.load_dotenv = saved_dotenv
+        self.assertEqual(code, runsheet.EXIT_CONFIG)
+        self.assertEqual(document["command"], "status")
+        self.assertFalse(document["ok"])
+        self.assertIsNone(document["payload"])
+        self.assertIn("SUBWAVE_BASE_URL", document["error"])
+
 
 class StatusSyncJsonTests(unittest.TestCase):
     """Tier 2: the sync field must say in-sync, then drifted, without prose."""
@@ -242,6 +256,17 @@ class DiffJsonTests(unittest.TestCase):
         payload = document["payload"]
         self.assertGreaterEqual(payload["count"], 1)
         self.assertIn(persona["id"], payload["changes"]["personas"]["changed"])
+
+    def test_a_missing_instance_returns_a_document_not_just_an_exit_code(self):
+        (runsheet.INSTANCE_DIR / "ids.lock.json").unlink()
+
+        code, document, err = run_json("diff", "--json")
+        self.assertEqual(code, runsheet.EXIT_ERROR)
+        self.assertEqual(document["command"], "diff")
+        self.assertFalse(document["ok"])
+        self.assertIsNone(document["payload"])
+        self.assertIn("no instance/", document["error"])
+        self.assertIn("no instance/", err)
 
     def test_a_grid_edit_names_the_changed_day(self):
         self.pull()
