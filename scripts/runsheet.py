@@ -5129,14 +5129,6 @@ def main(argv=None):
             # whether stdout holds a report or a failure.
             _emit_json(getattr(args, "command", None), False, None, error=str(exc))
         return EXIT_CONFIG
-    except ConfigError as exc:
-        print("runsheet: %s" % exc, file=sys.stderr)
-        if getattr(args, "json", False):
-            # A caller that asked for JSON must get a document even when the
-            # command never reached its payload: exit 1 alone cannot say
-            # whether stdout holds a report or a failure.
-            _emit_json(getattr(args, "command", None), False, None, error=str(exc))
-        return EXIT_CONFIG
     except ToolError as exc:
         print("runsheet: %s" % exc, file=sys.stderr)
         if getattr(args, "json", False):
