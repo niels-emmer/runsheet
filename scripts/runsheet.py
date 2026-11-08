@@ -1279,6 +1279,10 @@ def _init_values(config, args):
 
 def cmd_init(config, args):
     """Write .env in one step: discover host access, or record an HTTP-only station."""
+    if getattr(args, "mock", False):
+        raise ToolError(
+            "--mock runs station commands against an in-process mock; it has no .env to write. "
+            "Run init against the real station instead.")
     env_path = config.dotenv_path or (REPO_ROOT / ".env")
     existing = load_dotenv(env_path)
     populated = any(existing.get(key) for key in Config.KEYS)

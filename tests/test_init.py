@@ -14,6 +14,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from test_runsheet import load_tool
 
@@ -143,6 +144,18 @@ class Tier2InitTests(InitTestCase):
 
         self.assertEqual(code, 2)
         self.assertIn("must start with http:// or https://", output)
+        self.assertFalse(self.env_path().exists())
+
+    def test_mock_mode_is_refused_because_there_is_no_env_to_write(self):
+        args = SimpleNamespace(host=None, base_url="http://127.0.0.1:7700",
+                               admin_user=None, admin_pass=None,
+                               station_password=None, force=False, mock=True)
+        config = runsheet.Config(dotenv={}, environ={})
+
+        with self.assertRaises(runsheet.ToolError) as caught:
+            runsheet.cmd_init(config, args)
+
+        self.assertIn("has no .env to write", str(caught.exception))
         self.assertFalse(self.env_path().exists())
 
     def test_no_env_yet_starts_from_the_example_so_comments_survive(self):
