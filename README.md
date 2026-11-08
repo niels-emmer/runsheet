@@ -178,6 +178,7 @@ Two ways to reach a station. The second is worth having.
 | Command | What it does | Example |
 | --- | --- | --- |
 | `status` | tier, station, what is on air, drift vs your files (tier 2 only), and the lines that reach host access | `status` |
+| `capabilities` | what the current tier can do, and why a verb cannot; `--json` for an orchestrator | `capabilities --json` |
 | `pull` | copy the station into `instance/` | `pull --force` |
 | `diff` | what differs between your files and the station | `diff` |
 | `validate` | check your files before applying | `validate --dir examples/demo` |

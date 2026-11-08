@@ -173,6 +173,7 @@ sh scripts/check-secrets.sh --all    # also untracked-but-not-ignored
 python3 -m unittest discover -s tests  # offline: the mock station is in-process
 
 python3 scripts/runsheet.py status    # tier, station, on-air state, repo sync
+python3 scripts/runsheet.py capabilities [--json]  # what this tier can do, without attempting it
 python3 scripts/runsheet.py pull      # live -> instance/, secrets redacted (--force replaces)
 python3 scripts/runsheet.py diff      # drift vs live, exit 1 when drifted
 python3 scripts/runsheet.py backup    # config + assets, outside the repo

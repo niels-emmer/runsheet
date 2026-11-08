@@ -862,6 +862,70 @@ def _sync_line(config, tier, settings, schedule):
 
 
 # --------------------------------------------------------------------------
+# capabilities: what the current tier can actually do, without trying it
+# --------------------------------------------------------------------------
+
+# The verbs an orchestrator can ask about, in the order AGENTS.md lists them.
+CAPABILITY_VERBS = ("pull", "diff", "backup", "restore", "apply", "apply --prune",
+                    "character", "skills", "blocklist", "onair")
+
+# Tier 1 is portable and lossy. These three are refused outright, and the
+# reasons are the same ones the write commands themselves print. Sources:
+# AGENTS.md's tier table and Safety section, cmd_backup, cmd_restore, cmd_apply.
+TIER1_BLOCKED = {
+    "backup": ("the API backup omits schedule.json and /api/schedule trims shows to 7 of 26 "
+               "fields, so a tier-1 backup could not restore the programming; add "
+               "SUBWAVE_HOST and SUBWAVE_STATE_DIR for host access"),
+    "restore": ("the admin API cannot write schedule.json, so the programming could not be put "
+                "back; add SUBWAVE_HOST and SUBWAVE_STATE_DIR for host access"),
+    "apply --prune": ("--prune needs host access: a tier-1 backup cannot be taken, and a delete "
+                      "has no undo"),
+}
+
+# Available at tier 1, but not the whole story. A capability that is available
+# and degraded says so rather than reading as a clean yes.
+TIER1_NOTES = {
+    "pull": ("lossy: trimmed reads, 4 fields per persona, 7 of 26 per show, no schedule.json; "
+             "pass --allow-lossy to accept it"),
+    "diff": "compares only the fields tier 1 can read (trimmed personas and shows)",
+    "apply": ("only from a complete capture, and tier 1 needs --no-backup; a lossy tier-1 "
+              "capture is refused"),
+}
+
+
+def capability_report(tier):
+    """{verb: {"available": bool, "reason"|"note": str}} for a tier."""
+    report = {}
+    for verb in CAPABILITY_VERBS:
+        if tier == 1 and verb in TIER1_BLOCKED:
+            report[verb] = {"available": False, "reason": TIER1_BLOCKED[verb]}
+            continue
+        entry = {"available": True}
+        if tier == 1 and verb in TIER1_NOTES:
+            entry["note"] = TIER1_NOTES[verb]
+        report[verb] = entry
+    return report
+
+
+def cmd_capabilities(config, args):
+    """Report what the current tier allows. Read-only: it attempts no verb."""
+    tier, detail = detect_tier(config)
+    report = {"tier": tier, "detail": detail, "capabilities": capability_report(tier)}
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2))
+        return EXIT_OK
+    print("tier      %s" % TIER_LABEL[tier])
+    print("why       %s" % detail)
+    print("")
+    for verb in CAPABILITY_VERBS:
+        entry = report["capabilities"][verb]
+        verdict = "yes" if entry["available"] else "no"
+        extra = entry.get("note") or entry.get("reason") or ""
+        print(("%-14s%-4s%s" % (verb, verdict, extra)).rstrip())
+    return EXIT_OK
+
+
+# --------------------------------------------------------------------------
 # blocklist: the third config document, and the one the station's own backup
 # silently drops (backup/zip.ts INCLUDE_FILES lists jingles.json, jingles.m3u and
 # sfx.json, not blocklist.json). Ours is meant to be complete, so it carries it.
@@ -4391,6 +4455,12 @@ def build_parser():
 
     status = sub.add_parser("status", help="tier, station, on-air state, repo sync")
     status.set_defaults(func=cmd_status)
+
+    capabilities = sub.add_parser("capabilities",
+                                  help="what the current tier can do, and what it cannot")
+    capabilities.add_argument("--json", action="store_true",
+                              help="machine-readable output for an orchestrator")
+    capabilities.set_defaults(func=cmd_capabilities)
 
     pull = sub.add_parser("pull", help="capture live state into instance/")
     pull.add_argument("--force", action="store_true", help="replace an existing instance/")
