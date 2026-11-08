@@ -102,6 +102,37 @@ the three.
 - **Anything that bypasses the station's review step for a skill's custom script** — the station refuses to
   run one until a person has read and trusted it, and nothing here shortcuts that.
 
+### From a container, if you would rather not install Python
+
+The published image is a **runtime, not an installation**. It brings `python3`, `ssh` and `git`, and runs
+the toolkit out of the checkout you mount at `/repo` — so `instance/`, the audit trail and your git
+history are the same files they are without Docker. The tag pins the interpreter, not the toolkit: the
+code that runs is whatever your checkout holds.
+
+```sh
+docker run --rm -v "$PWD:/repo" \
+    --env-file .env \
+    ghcr.io/niels-emmer/runsheet:1.0.0 status
+```
+
+Five things behave differently inside a container, and each has one fix:
+
+- **`127.0.0.1` is the container, not your machine.** Point `SUBWAVE_BASE_URL` at
+  `host.docker.internal` (add `--add-host=host.docker.internal:host-gateway` on Linux), or run with
+  `--network host` on Linux.
+- **Files it writes will not be yours.** Add `--user "$(id -u):$(id -g)"` so `instance/` and
+  `docs/applied*` stay yours on the host. Without it the container writes as uid 10001.
+- **Backups need somewhere to survive.** Mount a host directory and point `HOME` at it:
+  `-v "$HOME/.runsheet-backups:/backups" -e HOME=/backups`. Use a bind mount rather than a Docker named
+  volume, which is created owned by root and then cannot be written by the container user.
+- **Tier 2 still needs ssh.** Mount the key and `known_hosts` read-only
+  (`-v "$HOME/.ssh:/home/runsheet/.ssh:ro"`) and make sure the container user can read the key.
+- **Do not pass `--read-only`.** `apply` records its audit entry under `docs/`; a read-only root
+  filesystem turns that into a warning while the change still lands.
+
+Prefer to keep credentials out of `docker inspect`? Mount a shared credentials file and set
+`RUNSHEET_ENV_FILE` to it instead of using `--env-file`.
+
 ## Safety, short
 
 Nothing is written to your station until you say so, and a backup is taken first (at tier 1 there is no

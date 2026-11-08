@@ -1,0 +1,97 @@
+name: image
+
+# The image is a runtime, not an install path: it carries the interpreter, ssh
+# and git, and runs the toolkit out of the checkout mounted at /repo (see
+# docs/decisions/D14). Every change builds it and runs the toolkit through it
+# offline; only a release tag publishes, so a `latest` tag cannot drift away
+# from the version someone pinned.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: runsheet:verify
+          cache-from: type=gha,scope=verify
+          cache-to: type=gha,mode=max,scope=verify
+
+      # A runtime image that has absorbed a checkout has become a second source
+      # of truth, and a local build would have absorbed a live .env with it.
+      - name: The image carries no checkout and no station data
+        run: |
+          if [ -n "$(docker run --rm --entrypoint sh runsheet:verify -c 'ls -A /repo')" ]; then
+            echo "::error::the image contains files; it must carry the runtime only"
+            docker run --rm --entrypoint sh runsheet:verify -c 'ls -A /repo'
+            exit 1
+          fi
+
+      - name: The image runs the toolkit from the mounted checkout
+        run: |
+          docker run --rm -v "$PWD:/repo" runsheet:verify validate --dir examples/demo
+          docker run --rm -v "$PWD:/repo" runsheet:verify --mock status
+
+      - name: It runs unprivileged
+        run: |
+          uid="$(docker run --rm --entrypoint id runsheet:verify -u)"
+          echo "container uid: $uid"
+          [ "$uid" != "0" ]
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # A SUB/WAVE host is as likely to be a Raspberry Pi as a server.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true

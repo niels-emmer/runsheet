@@ -222,7 +222,12 @@ python3 scripts/runsheet.py character init --from demo   # scaffold a character 
 python3 scripts/runsheet.py character new-persona|new-show|add-to-grid   # author personas, shows, grid
 python3 scripts/runsheet.py character edit-persona|edit-show <slug> --set FIELD=VALUE  # change named fields only
 python3 scripts/runsheet.py apply     # DRY RUN by default; --yes performs the writes
+docker run --rm -v "$PWD:/repo" ghcr.io/niels-emmer/runsheet:1.0.0 status   # a host with no python3
 ```
+
+The image is a runtime, not an install: it carries `python3`, `ssh` and `git` and contains no checkout
+and no station data, so the bind mount is the repo (D14). Inside it `SUBWAVE_BASE_URL=127.0.0.1` means
+the container rather than your machine, and tier 2 still needs ssh.
 
 `status`, `diff` and `validate` also take `--json`: one JSON document on stdout instead of the formatted
 report, additive to the default text. The envelope is `{"command", "ok", "payload"}`; `payload` is
