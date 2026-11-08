@@ -5553,7 +5553,9 @@ def main(argv=None):
                 _emit_json(getattr(args, "command", None), False, None, error=str(exc))
             return EXIT_CONFIG
         print("mock      %s (in-process tests/mock_station.py; no network, no host)"
-              % mock.server.url, flush=True)
+              % mock.server.url,
+              file=sys.stderr if getattr(args, "json", False) else sys.stdout,
+              flush=True)
     try:
         config = mock.config if mock else Config()
         return args.func(config, args)

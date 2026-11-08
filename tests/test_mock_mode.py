@@ -102,6 +102,13 @@ class StatusRoutingTests(MockModeTestCase):
         self.assertEqual(code, 0, out + err)
         self.assertIn("station   Harbour Lights", out)
 
+    def test_json_mode_keeps_the_mock_banner_off_stdout(self):
+        code, out, err = self.run_cli("--mock", "status", "--json", environ=LIVE_ENV)
+        self.assertEqual(code, 0, out + err)
+        document = json.loads(out)
+        self.assertEqual(document["command"], "status")
+        self.assertIn("mock      http://127.0.0.1:", err)
+
     def test_without_the_flag_the_real_configuration_is_used(self):
         # Hermetic: a developer's own SUBWAVE_HOST must not make this probe ssh.
         environ = {"SUBWAVE_BASE_URL": "http://127.0.0.1:1"}
