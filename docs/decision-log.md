@@ -10,6 +10,7 @@ decision is `decisions/D<n>-<slug>.md` plus one row in the table below.
 
 | # | Date | Decision |
 | --- | --- | --- |
+| [D14](decisions/D14-docker-ships-as-an-optional-runtime-image-not-an-install-path.md) | 2026-11-08 | Docker ships as an optional runtime image, not an install path |
 | [D13](decisions/D13-tier-2-is-discovered-from-a-bare-ssh-host-not-interrogated-out-of-the-operator.md) | 2026-10-31 | Tier 2 is discovered from a bare ssh host, not interrogated out of the operator |
 | [D12](decisions/D12-the-container-name-is-configurable-and-env-example-is-kept-in-parity-by-a-test.md) | 2026-10-31 | The container name is configurable, and `.env.example` is kept in parity by a test |
 | [D11](decisions/D11-edit-vocabularies-are-sourced-from-upstream-with-a-forced-value-escape.md) | 2026-10-31 | Edit vocabularies are sourced from upstream, with a forced-value escape |

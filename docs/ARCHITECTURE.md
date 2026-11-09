@@ -25,8 +25,10 @@ Three parties, and the toolkit is the only one that is neither the station nor t
      └── git ── history, review, undo
 ```
 
-The station is a separate project. This repository ships no station code, no container image and no
-binary assets; it ships a single Python file, a set of committed procedures, and a fictional demo station.
+The station is a separate project. This repository ships no station code, no station container image and
+no binary assets; it ships a single Python file, a set of committed procedures, and a fictional demo
+station. It does publish one optional image of its own — a runtime that executes that Python file from a
+mounted checkout — which is not an install path and ships no data ([D14](decisions/D14-docker-ships-as-an-optional-runtime-image-not-an-install-path.md)).
 
 ## Two constraints that shaped everything
 
@@ -230,6 +232,7 @@ CONTRIBUTING.md           setup, checks, conventions
 SECURITY.md               threat model and accepted risks
 scripts/runsheet.py        the tool: one file, standard library only
 scripts/check-secrets.sh  the commit gate and CI check
+Dockerfile                optional runtime image — python + ssh + git, runs the mounted checkout (D14)
 skills/<name>/SKILL.md    agent procedures — the only copy of each
 .claude/skills/<name>/    SKILL.md symlink -> ../../../skills/<name>/SKILL.md (Claude Code)
 .agents/skills/<name>     folder symlink -> ../../skills/<name> (Codex; OpenCode reads both)
@@ -269,6 +272,7 @@ controller exists, and a test that needs a real station belongs behind a flag, n
 | Quickstart | `tests/test_smoke.py` copies only tracked files to a temp dir, starts the mock, and drives `status` → `pull --allow-lossy` → `validate` → `diff` → `apply` as subprocesses with no ssh and no HOME. If it fails, the README is lying |
 | Tier honesty | a tier-1 run refuses `backup` and names the missing schedule; no command silently trims |
 | Demo | CI validates `examples/demo/`, so a regression in the schema reference or the scaffold fixture fails there |
+| Image is a runtime | `.github/workflows/image.yml` builds it, asserts `/repo` is empty inside it, and runs `validate` and `--mock status` through it as a non-root user |
 | Audit | every apply has an entry in `docs/applied/` and a backup outside the repo |
 
 The suite is the guard against regressions; a live station is the guard against the suite being wrong.

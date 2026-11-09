@@ -71,12 +71,16 @@ These are deliberate, documented trade-offs rather than oversights:
 There are none at runtime: the toolkit is Python 3 standard library only, and CI runs on a bare
 `ubuntu-24.04` runner with no install step. That decides what is worth turning on:
 
-- **Dependabot watches GitHub Actions versions only.** `.github/dependabot.yml` has a single
-  `github-actions` entry because there is no pip ecosystem to watch.
+- **Dependabot watches GitHub Actions versions and the image's base image.** `.github/dependabot.yml`
+  has `github-actions` and `docker` entries: there is no pip ecosystem to watch, and the base image is
+  the one supply-chain surface the optional container adds.
+- **The published image is a runtime with nothing in it.** It carries `python3`, `ssh` and `git`,
+  copies nothing from the checkout, and holds no station data; `.dockerignore` keeps a local `.env`
+  and `instance/` out of the build context that `docker build` hands to the daemon (D14).
 - **Dependabot security updates are disabled on purpose.** With no runtime dependency graph there is
-  nothing for them to patch. Leaving them enabled would show a green "security updates on" signal
-  that can never fire, which is worse than an honest off. If a runtime dependency is ever added,
-  turn them on in the same change.
+  nothing for them to patch; base-image bumps arrive as ordinary version-update PRs, above. Leaving them
+  enabled would show a green "security updates on" signal that can never fire, which is worse than an
+  honest off. If a runtime dependency is ever added, turn them on in the same change.
 - **Secret scanning uses the provider patterns** (GitHub, AWS and the rest) **plus push protection.**
   No custom patterns are configured: this repo has no credential format of its own to match, and
   `scripts/check-secrets.sh` covers the project-specific cases locally and in CI.

@@ -1,0 +1,17 @@
+# Nothing here is copied into the image — the image is a runtime and the
+# checkout is mounted at run time (see D14). This file still matters: it keeps
+# credentials and captured station data out of the build context that
+# `docker build` hands to the daemon, so a build started from a working
+# checkout cannot carry a live .env or a station's instance/ into a layer or
+# the daemon's cache.
+.env
+.env.*
+instance/
+backups/
+state/
+*.log
+*.bak
+.git/
+.venv/
+__pycache__/
+*.pyc

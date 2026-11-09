@@ -20,7 +20,8 @@ Paste this into Claude Code, Codex, OpenCode, or any agent that reads `AGENTS.md
 That is the intended path, and the repo is built to be discoverable that way: `AGENTS.md` is the hub, and
 the five procedures in `skills/` are committed as relative symlinks under `.claude/skills/` and
 `.agents/skills/`, so all three named agents find them with no setup. There is nothing to install — the
-tool is one Python file using only the standard library.
+tool is one Python file using only the standard library. If the host has no `python3`, there is an
+[optional runtime image](docs/INSTALL.md#from-a-container-if-you-would-rather-not-install-python).
 
 ### Or three commands yourself
 
@@ -114,7 +115,7 @@ on what you are deleting. The full list of guards, and what each protects agains
 | Doc | Covers |
 | --- | --- |
 | [AGENTS.md](AGENTS.md) | the operating rules every agent reads, and the full guard list |
-| [docs/INSTALL.md](docs/INSTALL.md) | both tiers, credentials, the demo station, `--mock` |
+| [docs/INSTALL.md](docs/INSTALL.md) | both tiers, credentials, the optional container image, the demo station, `--mock` |
 | [docs/USAGE.md](docs/USAGE.md) | every request in the table above, in full |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | all commands, flags and the `--json` shapes |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | how it is built and why |

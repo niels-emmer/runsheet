@@ -18,7 +18,7 @@ once it *is* out there.
 | License | MIT, detected |
 | Community profile | 100% — README, LICENSE, SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, PR template |
 | Release | `v1.0.0`, tagged from `main` after CI was green |
-| Branch protection on `main` | requires `secrets`, `tests`, `demo`; strict; 1 approval; no force-push; no deletion |
+| Branch protection on `main` | requires `secrets`, `tests`, `demo`; strict; 1 approval; no force-push; no deletion (`verify` from `image.yml` is not a required context yet) |
 | Secret scanning | enabled (provider patterns; no custom patterns — the repo has no credential format of its own) |
 | Push protection | enabled |
 | Dependabot security updates | **off on purpose** — no runtime dependency graph to patch; see [SECURITY.md](../SECURITY.md#dependencies) |
@@ -95,6 +95,10 @@ Settings → Branches → rule on `main`: require a pull request, require all th
 **Why:** an unprotected `main` lets a direct push skip those jobs, which makes "CI is green" mean
 nothing to a visitor reading the repo. Require all three, not just `secrets`: a regression in
 `tests` or in the committed demo is exactly what this repo's CI exists to catch.
+
+`image.yml` adds a fourth job, `verify`, which builds the image and runs the toolkit through it. Add it
+to the required contexts when branch protection is next updated: until then a red image build is visible
+on the pull request but does not block the merge.
 
 `enforce_admins` is **off** because there is one maintainer: non-admins get the full gate, while the
 owner's own merges bypass it and GitHub prints `Bypassed rule violations …`. That is expected, not an

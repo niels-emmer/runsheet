@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **An optional runtime image, for a host with no Python.** `ghcr.io/niels-emmer/runsheet` (linux/amd64
+  and linux/arm64, unprivileged) carries `python3`, `ssh` and `git` and runs the toolkit out of the
+  checkout mounted at `/repo` — so `instance/`, the write lock, the audit trail and your git history are
+  the same files they are without Docker, and the tag pins the interpreter rather than the code. It is a
+  **runtime, not an installation**: the image copies nothing from the repository and holds no station
+  data, because a baked-in copy would give the tool a second `instance/` and a second source of truth
+  ([D14](docs/decisions/D14-docker-ships-as-an-optional-runtime-image-not-an-install-path.md)).
+  `.dockerignore` keeps a live `.env` and a station's `instance/` out of the build context that
+  `docker build` hands to the daemon, and [`tests/test_docker.py`](tests/test_docker.py) fails if a
+  `COPY`/`ADD` reappears, if the image runs as root, or if publishing stops being tag-gated. Verified on
+  every change by [`.github/workflows/image.yml`](.github/workflows/image.yml) — which builds it, proves
+  `/repo` is empty inside it, and runs `validate` and `--mock status` through it — and published only from
+  a release tag. The container-specific differences (`127.0.0.1`, file ownership, backups, tier 2's ssh
+  key) are in `docs/INSTALL.md`.
 - **A read-only MCP server for the toolkit itself.** `python3 scripts/runsheet.py mcp-server` speaks MCP
   (JSON-RPC over stdio, stdlib only) and exposes exactly three tools — `runsheet_status`, `runsheet_diff`
   and `runsheet_validate` — each a thin wrapper around the existing command, so an MCP-native agent no
