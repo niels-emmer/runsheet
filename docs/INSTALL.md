@@ -3,9 +3,11 @@
 ## What you need
 
 An existing **SUB/WAVE** station. The station is the thing that runs as Docker containers on your
-server; runsheet is a checkout that talks to it. This repository ships no station code and no image,
-and **nothing here runs Docker on your behalf** — it uses ssh and `docker exec` only to read the
-station's state files when you give it host access.
+server; runsheet is a checkout that talks to it. This repository ships no station code and no image of
+the station, and **nothing here runs Docker on your behalf** — it uses ssh and `docker exec` only to
+read the station's state files when you give it host access. Its one image is an optional runtime of
+runsheet itself, for a host without `python3` — see [the container section of the
+README](../README.md#from-a-container-if-you-would-rather-not-install-python).
 
 The tool itself is one Python file with no dependencies, so there is nothing to `pip install`.
 
