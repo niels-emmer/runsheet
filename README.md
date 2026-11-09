@@ -50,18 +50,19 @@ docker run --rm -v "$PWD:/repo" \
 Tags are release tags, so `1.1.0` is the first one that carries this image — `v1.0.0` predates both the
 `Dockerfile` and the workflow that publishes it.
 
-Five things behave differently inside a container, and each has one fix:
+Five things behave differently inside a container. Four have a one-flag fix; ownership and ssh are the
+exception:
 
 - **`127.0.0.1` is the container, not your machine.** Point `SUBWAVE_BASE_URL` at
   `host.docker.internal` (add `--add-host=host.docker.internal:host-gateway` on Linux), or run with
   `--network host` on Linux.
-- **Ownership and ssh are one decision.** A bind mount keeps the host's ownership, so the default uid
-  10001 can neither write your checkout on Linux (`pull` and `apply` fail with EACCES) nor read a `600`
+- **Ownership and ssh are one decision.** A bind mount keeps the host's ownership, so on Linux the
+  default uid 10001 can neither write your checkout (`pull` and `apply` fail with EACCES) nor read a `600`
   ssh key. `--user "$(id -u):$(id -g)"` fixes both, except that `ssh` exits 255 with
   `No user exists for uid …` when your uid has no `/etc/passwd` entry. So on Linux run with both: mount
-  `-v "$HOME/.ssh:/home/runsheet/.ssh:ro"`, pass `--user "$(id -u):$(id -g)"`, and mount a passwd file
-  that names your uid with `/home/runsheet` as its home (`-v ./runsheet.passwd:/etc/passwd:ro`). A host
-  new to the mounted `known_hosts` still fails to verify, so connect once from the host first.
+  `-v "$HOME/.ssh:/home/runsheet/.ssh:ro"`, pass `--user "$(id -u):$(id -g)"`, and mount a generated
+  passwd file at `/etc/passwd` (below). Docker Desktop maps ownership, so on macOS none of this is needed.
+  A host new to the mounted `known_hosts` still fails to verify, so connect once from the host first.
 - **Backups go where you mount them.** `-v "$HOME/.runsheet-backups:/backups"` with
   `backup --dir /backups` (or `apply --backup-dir /backups`); otherwise the default is
   `~/.subwave-backups` inside the container and dies with it.
@@ -77,8 +78,10 @@ Five things behave differently inside a container, and each has one fix:
 On Linux with host access, that combination is:
 
 ```sh
-printf 'root:x:0:0:root:/root:/bin/sh\nme:x:%s:%s::/home/runsheet:/bin/sh\n' \
-    "$(id -u)" "$(id -g)" > "$HOME/.runsheet.passwd"
+# The login name is not cosmetic: ssh falls back to it as the remote user when
+# SUBWAVE_HOST carries no user part, and a bare host is a supported setting.
+printf 'root:x:0:0:root:/root:/bin/sh\n%s:x:%s:%s::/home/runsheet:/bin/sh\n' \
+    "$(id -un)" "$(id -u)" "$(id -g)" > "$HOME/.runsheet.passwd"
 docker run --rm -v "$PWD:/repo" --user "$(id -u):$(id -g)" \
     -v "$HOME/.runsheet.passwd:/etc/passwd:ro" \
     -v "$HOME/.ssh:/home/runsheet/.ssh:ro" \

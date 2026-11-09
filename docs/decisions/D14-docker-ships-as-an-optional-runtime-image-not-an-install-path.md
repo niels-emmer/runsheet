@@ -35,8 +35,10 @@
     mounted checkout keeps the host's ownership, so 10001 can neither write `instance/` (EACCES on `pull`
     and `apply`) nor read a `600` ssh key — and `ssh` refuses to run at all as a uid missing from
     `/etc/passwd` (`No user exists for uid …`, exit 255). The working combination is
-    `--user "$(id -u):$(id -g)"` plus a mounted `/etc/passwd` naming that uid, which the README documents
-    rather than the image hiding. Docker Desktop maps ownership, so the EACCES half is Linux-only.
+    `--user "$(id -u):$(id -g)"` plus a mounted `/etc/passwd` naming that uid and the operator's login
+    name — ssh falls back to the login name as the remote user when `SUBWAVE_HOST` carries no user part,
+    and a bare host is a supported setting. The README documents that rather than the image hiding it.
+    Docker Desktop maps ownership, so the EACCES half is Linux-only.
     Making the image uid-agnostic would mean rewriting `/etc/passwd` at start-up, and that file is
     root-owned: it is a root entrypoint dropping privileges, a larger change than this packaging
     decision.
