@@ -21,7 +21,7 @@ All notable changes to this project are documented here. The format is based on
   every change by [`.github/workflows/image.yml`](.github/workflows/image.yml) — which builds it, proves
   `/repo` is empty inside it, and runs `validate` and `--mock status` through it — and published only from
   a release tag. The container-specific differences (`127.0.0.1`, file ownership, backups, tier 2's ssh
-  key) are in the README.
+  key) are in `docs/INSTALL.md`.
 - **A read-only MCP server for the toolkit itself.** `python3 scripts/runsheet.py mcp-server` speaks MCP
   (JSON-RPC over stdio, stdlib only) and exposes exactly three tools — `runsheet_status`, `runsheet_diff`
   and `runsheet_validate` — each a thin wrapper around the existing command, so an MCP-native agent no
